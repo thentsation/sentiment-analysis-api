@@ -3,10 +3,10 @@ name: Docker CI/CD
 on:
   push:
     branches:
-      - feature/pipelines
+      - main
   pull_request:
     branches:
-      - pipelines
+      - main
 
 jobs:
   build-and-test:
@@ -21,4 +21,4 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t sentiment-analysis-api .
+          docker build -t sentiment:latest -f docker/Dockerfile .

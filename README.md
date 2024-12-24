@@ -43,7 +43,7 @@ This is a FastAPI application that performs sentiment analysis on text inputs us
 1. Run the application:
 
    ```bash
-   python main.py
+   python src/main.py
    ```
 
    The API will start on `http://127.0.0.1:8000`.
