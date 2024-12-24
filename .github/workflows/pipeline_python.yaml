@@ -3,7 +3,7 @@ name: Python Formatter Check
 on:
   push:
     branches:
-      - feature/pipelines
+      - main
   pull_request:
 
 jobs:
