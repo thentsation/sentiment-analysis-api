@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from models.models import TextRequest, MultiTextRequest
+from models.models import MultiTextRequest, TextRequest
 from services.sentiment_service import SentimentService
 
 router = APIRouter()

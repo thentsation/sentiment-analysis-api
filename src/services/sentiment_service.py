@@ -1,17 +1,16 @@
-
 from repositories.sentiment_repository import analyze_sentiment
-from typing import Dict
+
 
 class SentimentService:
     
-    def analyze_sentiment(self, text: str) -> Dict[str, float]:
+    def analyze_sentiment(self, text: str) -> dict[str, float]:
         return analyze_sentiment(text)
 
-    def analyze_multiple_sentiments(self, texts: list) -> Dict[str, Dict[str, float]]:
+    def analyze_multiple_sentiments(self, texts: list) -> dict[str, dict[str, float]]:
         results = {text: self.analyze_sentiment(text) for text in texts}
         return results
 
-    def analyze_statistics(self, texts: list) -> Dict[str, int]:
+    def analyze_statistics(self, texts: list) -> dict[str, int]:
         total_sentiment = {'positive': 0, 'neutral': 0, 'negative': 0}
         for text in texts:
             score = self.analyze_sentiment(text)

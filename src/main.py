@@ -1,5 +1,5 @@
-from fastapi import FastAPI
 import uvicorn
+from fastapi import FastAPI
 from routes.sentiment_routes import router
 
 app = FastAPI()
