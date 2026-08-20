@@ -1,5 +1,6 @@
 [tool.ruff]
 target-version = "py311"
+extend-exclude = ["src/vendor"]
 
 [tool.ruff.format]
 quote-style = "single"
@@ -12,3 +13,10 @@ explicit_package_bases = true
 disallow_untyped_defs = true
 warn_unused_ignores = true
 ignore_missing_imports = true
+exclude = "vendor"
+
+[tool.coverage.run]
+omit = ["src/vendor/*"]
+
+[tool.coverage.report]
+exclude_also = ["if __name__ == .__main__.':"]
