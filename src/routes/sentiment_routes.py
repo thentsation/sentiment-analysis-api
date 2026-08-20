@@ -1,12 +1,17 @@
+import json
+from collections.abc import Iterator
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
+from fastapi.responses import StreamingResponse
 
 from config import settings
 from models.models import (
     AnalyzeMultipleResponse,
     AnalyzeResponse,
+    BatchAcceptedResponse,
     CacheInvalidationResponse,
+    JobResultResponse,
     MultiTextRequest,
     SentimentClassesResponse,
     SentimentScores,
@@ -15,10 +20,12 @@ from models.models import (
     TextRequest,
 )
 from services.cache_service import sentiment_cache
+from services.job_store import JobStore, process_job
 from services.sentiment_service import SentimentService
 
 router = APIRouter(prefix='/v1')
 sentiment_service = SentimentService(cache=sentiment_cache)
+job_store = JobStore(maxsize=settings.job_store_maxsize)
 
 SENTIMENT_CLASSES = {
     'positive': 'Scores greater than 0.05',
@@ -109,3 +116,84 @@ def invalidate_cache(
     _ensure_admin(x_admin_token)
     cleared = sentiment_cache.clear()
     return CacheInvalidationResponse(status='cache invalidated', cleared=cleared)
+
+
+@router.post(
+    '/analyze_batch',
+    response_model=BatchAcceptedResponse,
+    status_code=202,
+    tags=['batch'],
+    summary='Submit a batch of texts for asynchronous analysis',
+    description='Accepts a large batch and returns a job id immediately. Poll '
+    '`/v1/results/{job_id}` until status is `completed` or `failed`.',
+)
+def submit_batch(
+    request: MultiTextRequest, background_tasks: BackgroundTasks
+) -> BatchAcceptedResponse:
+    if not request.texts:
+        raise HTTPException(status_code=400, detail='No texts provided')
+
+    job = job_store.create(total=len(request.texts), language=request.language)
+    background_tasks.add_task(
+        process_job,
+        job_store,
+        sentiment_service,
+        job.id,
+        request.texts,
+        request.language,
+    )
+    return BatchAcceptedResponse(
+        job_id=job.id,
+        status=job.status,
+        total=job.total,
+        results_url=f'/v1/results/{job.id}',
+    )
+
+
+@router.get(
+    '/results/{job_id}',
+    response_model=JobResultResponse,
+    tags=['batch'],
+    summary='Get the result of an asynchronous batch job',
+)
+def get_results(job_id: str) -> JobResultResponse:
+    job = job_store.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail='Job not found')
+
+    return JobResultResponse(
+        job_id=job.id,
+        status=job.status,
+        total=job.total,
+        processed=job.processed,
+        language=job.language,
+        results={
+            text: SentimentScores(**scores) for text, scores in job.results.items()
+        }
+        or None,
+    )
+
+
+@router.post(
+    '/analyze_stream',
+    tags=['stream'],
+    summary='Stream sentiment analysis results via Server-Sent Events',
+    description='Analyzes each text progressively and emits one `data` event per text, '
+    'followed by a final `done` event.',
+)
+def analyze_stream(request: MultiTextRequest) -> StreamingResponse:
+    if not request.texts:
+        raise HTTPException(status_code=400, detail='No texts provided')
+
+    def event_stream() -> Iterator[str]:
+        for text in request.texts:
+            scores = sentiment_service.analyze_sentiment(text, request.language)
+            payload = {'text': text, 'sentiment': scores}
+            yield f'data: {json.dumps(payload)}\n\n'
+        yield 'event: done\ndata: {}\n\n'
+
+    return StreamingResponse(
+        event_stream(),
+        media_type='text/event-stream',
+        headers={'Cache-Control': 'no-cache'},
+    )

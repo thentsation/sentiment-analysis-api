@@ -13,6 +13,7 @@ def test_settings_defaults():
     assert settings.admin_token == ''
     assert settings.cache_maxsize == 10_000
     assert settings.cache_ttl_seconds == 300.0
+    assert settings.job_store_maxsize == 100
 
 
 def test_settings_env_override(monkeypatch):

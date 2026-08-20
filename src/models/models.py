@@ -70,3 +70,19 @@ class RootResponse(BaseModel):
 class CacheInvalidationResponse(BaseModel):
     status: str
     cleared: int
+
+
+class BatchAcceptedResponse(BaseModel):
+    job_id: str
+    status: str
+    total: int
+    results_url: str
+
+
+class JobResultResponse(BaseModel):
+    job_id: str
+    status: str
+    total: int
+    processed: int
+    language: Language
+    results: dict[str, SentimentScores] | None = None
