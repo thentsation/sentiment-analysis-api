@@ -70,6 +70,7 @@ FastAPI application that performs sentiment analysis on text inputs using NLTK V
 | `make format` | Runs `ruff format .` |
 | `make typecheck` | Runs `mypy` |
 | `make load-test` | Runs the locust load test UI |
+| `make benchmark` | Runs the cache benchmark (hit vs miss, EN/PT) — requires the server running with `RATE_LIMIT_PER_MINUTE` high |
 | `make docker-build` | Builds the Docker image |
 | `make docker-run` | Runs the Docker container on port 8000 |
 | `make clean` | Removes caches and artifacts |
@@ -133,6 +134,16 @@ Headless example:
 ```bash
 .venv/bin/locust -f load_tests/locustfile.py --host http://localhost:8000 \
   --headless -u 50 -r 5 --run-time 30s
+```
+
+### Benchmark
+
+Cache hit vs cache miss benchmark (results and methodology in
+[`docs/benchmarks/`](docs/benchmarks/)):
+
+```bash
+RATE_LIMIT_PER_MINUTE=1000000 make run
+make benchmark
 ```
 
 ## API Endpoints

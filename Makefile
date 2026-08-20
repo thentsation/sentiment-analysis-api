@@ -1,4 +1,4 @@
-.PHONY: install run dev test coverage lint format typecheck load-test docker-build docker-run clean
+.PHONY: install run dev test coverage lint format typecheck load-test benchmark docker-build docker-run clean
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python
@@ -33,6 +33,15 @@ typecheck:
 
 load-test:
 	$(VENV)/bin/locust -f load_tests/locustfile.py --host http://localhost:8000
+
+BENCH_HOST ?= http://localhost:8000
+BENCH_USERS ?= 20
+BENCH_TIME ?= 30s
+
+benchmark:
+	@echo "== Cache hit ==" && $(VENV)/bin/locust -f load_tests/benchmark.py CacheHitUser --host $(BENCH_HOST) --headless -u $(BENCH_USERS) -r $(BENCH_USERS) -t $(BENCH_TIME) --only-summary
+	@echo "== Cache miss ==" && $(VENV)/bin/locust -f load_tests/benchmark.py CacheMissUser --host $(BENCH_HOST) --headless -u $(BENCH_USERS) -r $(BENCH_USERS) -t $(BENCH_TIME) --only-summary
+	@echo "== PT-BR cache miss ==" && $(VENV)/bin/locust -f load_tests/benchmark.py PtCacheMissUser --host $(BENCH_HOST) --headless -u $(BENCH_USERS) -r $(BENCH_USERS) -t $(BENCH_TIME) --only-summary
 
 docker-build:
 	docker build -f docker/Dockerfile -t sentiment-analysis-api .
