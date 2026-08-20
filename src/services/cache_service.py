@@ -2,6 +2,7 @@ import threading
 import time
 
 from config import settings
+from observability.metrics import CACHE_HITS_TOTAL, CACHE_MISSES_TOTAL, CACHE_SIZE
 
 
 class SentimentCache:
@@ -16,11 +17,14 @@ class SentimentCache:
         with self._lock:
             entry = self._entries.get(key)
             if entry is None:
+                CACHE_MISSES_TOTAL.inc()
                 return None
             expires_at, value = entry
             if time.monotonic() >= expires_at:
                 del self._entries[key]
+                CACHE_MISSES_TOTAL.inc()
                 return None
+            CACHE_HITS_TOTAL.inc()
             return value
 
     def set(self, text: str, language: str, value: dict[str, float]) -> None:
@@ -30,11 +34,13 @@ class SentimentCache:
                 oldest_key = next(iter(self._entries))
                 del self._entries[oldest_key]
             self._entries[key] = (time.monotonic() + self._ttl, value)
+            CACHE_SIZE.set(len(self._entries))
 
     def clear(self) -> int:
         with self._lock:
             cleared = len(self._entries)
             self._entries.clear()
+            CACHE_SIZE.set(0)
         return cleared
 
     @property

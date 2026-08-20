@@ -1,3 +1,4 @@
+from observability.metrics import SENTIMENT_ANALYSIS_TOTAL
 from repositories.sentiment_repository import analyze_sentiment
 from services.cache_service import SentimentCache
 
@@ -21,6 +22,9 @@ class SentimentService:
                 return cached
 
         result = analyze_sentiment(text, language)
+        SENTIMENT_ANALYSIS_TOTAL.labels(
+            language=language, sentiment=classify_compound(result['compound'])
+        ).inc()
 
         if self._cache is not None:
             self._cache.set(text, language, result)

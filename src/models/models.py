@@ -64,6 +64,7 @@ class RootResponse(BaseModel):
     version: str
     docs: str
     health: str
+    metrics: str
     endpoints: list[str]
 
 

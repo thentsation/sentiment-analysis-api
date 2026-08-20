@@ -2,6 +2,9 @@ fastapi==0.141.1
 uvicorn==0.52.4
 nltk==3.10.3
 pydantic-settings==2.15.0
+prometheus-client==0.26.0
+structlog==26.1.0
+sentry-sdk[fastapi]==2.68.0
 pytest==9.1.1
 pytest-cov==7.1.0
 httpx==0.28.1

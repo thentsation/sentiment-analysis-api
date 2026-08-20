@@ -3,6 +3,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
+from observability.metrics import BATCH_JOBS_TOTAL
+
 if TYPE_CHECKING:
     from services.sentiment_service import SentimentService
 
@@ -38,6 +40,7 @@ class JobStore:
             while len(self._jobs) > self._maxsize:
                 oldest_id = next(iter(self._jobs))
                 del self._jobs[oldest_id]
+        BATCH_JOBS_TOTAL.labels(status='accepted').inc()
         return job
 
     def get(self, job_id: str) -> Job | None:
@@ -53,11 +56,13 @@ class JobStore:
         job = self.get(job_id)
         if job is not None:
             job.status = 'completed'
+            BATCH_JOBS_TOTAL.labels(status='completed').inc()
 
     def fail(self, job_id: str) -> None:
         job = self.get(job_id)
         if job is not None:
             job.status = 'failed'
+            BATCH_JOBS_TOTAL.labels(status='failed').inc()
 
 
 def process_job(
