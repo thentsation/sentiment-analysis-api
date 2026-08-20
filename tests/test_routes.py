@@ -23,8 +23,22 @@ def test_analyze_empty_text_returns_400():
     assert response.json()['detail'] == 'No text provided'
 
 
+def test_analyze_text_over_max_length_returns_422():
+    response = client.post('/analyze', json={'text': 'a' * 10_001})
+
+    assert response.status_code == 422
+
+
+def test_analyze_multiple_over_max_texts_returns_422():
+    response = client.post('/analyze_multiple', json={'texts': ['ok'] * 101})
+
+    assert response.status_code == 422
+
+
 def test_analyze_multiple_success():
-    response = client.post('/analyze_multiple', json={'texts': ['I love this!', 'I hate this!']})
+    response = client.post(
+        '/analyze_multiple', json={'texts': ['I love this!', 'I hate this!']}
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -47,7 +61,9 @@ def test_sentiment_classes_success():
 
 
 def test_analyze_statistics_success():
-    response = client.post('/analyze_statistics', json={'texts': ['I love this!', 'I hate this!']})
+    response = client.post(
+        '/analyze_statistics', json={'texts': ['I love this!', 'I hate this!']}
+    )
 
     assert response.status_code == 200
     statistics = response.json()['statistics']
