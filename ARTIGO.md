@@ -1,3 +1,5 @@
+🇧🇷 Português | [🇺🇸 English](ARTIGO.en-us.md)
+
 # De API de brinquedo a produção: evoluindo uma API de análise de sentimento
 
 Como uma API FastAPI de ~100 linhas virou um serviço com testes, CI, cache, multi-idioma, batch assíncrono, SSE e observabilidade — com números reais de benchmark no final.

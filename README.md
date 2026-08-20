@@ -1,3 +1,5 @@
+[🇧🇷 Português](README.pt-br.md) | 🇺🇸 English
+
 # Sentiment Analysis API
 
 FastAPI application that performs sentiment analysis on text inputs using NLTK VADER (English) and LeIA (Portuguese).
