@@ -12,6 +12,10 @@ WORKDIR /app
 
 COPY --from=builder /install /usr/local
 
+ENV NLTK_DATA=/usr/local/share/nltk_data
+
+RUN python -c "import nltk; nltk.download('vader_lexicon', download_dir='/usr/local/share/nltk_data')"
+
 RUN useradd --create-home appuser
 
 USER appuser
