@@ -9,5 +9,7 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       - LOG_LEVEL=info
+      - LOG_FORMAT=json
+      - WORKERS=1
       - RATE_LIMIT_PER_MINUTE=100
       - CORS_ORIGINS=["*"]
