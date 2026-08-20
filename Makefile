@@ -1,4 +1,4 @@
-.PHONY: install run dev test coverage lint format typecheck docker-build docker-run clean
+.PHONY: install run dev test coverage lint format typecheck load-test docker-build docker-run clean
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python
@@ -8,7 +8,7 @@ install:
 	python3 -m venv $(VENV)
 	$(PIP) install --upgrade pip
 	$(PIP) install -r config/requirements.txt
-	$(PIP) install ruff==0.16.3 mypy==2.3.1 pre-commit==4.6.2
+	$(PIP) install -r config/requirements-dev.txt
 
 run:
 	$(PYTHON) src/main.py
@@ -30,6 +30,9 @@ format:
 
 typecheck:
 	$(VENV)/bin/mypy
+
+load-test:
+	$(VENV)/bin/locust -f load_tests/locustfile.py --host http://localhost:8000
 
 docker-build:
 	docker build -f docker/Dockerfile -t sentiment-analysis-api .
