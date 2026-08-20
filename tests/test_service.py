@@ -40,7 +40,9 @@ def test_analyze_statistics_classifies_texts(mock_analyze):
     ]
     service = SentimentService()
 
-    result = service.analyze_statistics(['I love this!', 'I hate this!', 'This is a table.'])
+    result = service.analyze_statistics(
+        ['I love this!', 'I hate this!', 'This is a table.']
+    )
 
     assert result == {'positive': 1, 'neutral': 1, 'negative': 1}
 

@@ -8,6 +8,7 @@ except LookupError:
 
 sia = SentimentIntensityAnalyzer()
 
+
 def analyze_sentiment(text: str) -> dict[str, float]:
     sentiment_score = sia.polarity_scores(text)
     return sentiment_score

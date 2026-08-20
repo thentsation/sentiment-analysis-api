@@ -1,4 +1,4 @@
-.PHONY: install run test coverage lint format docker-build docker-run clean
+.PHONY: install run dev test coverage lint format typecheck docker-build docker-run clean
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python
@@ -8,10 +8,13 @@ install:
 	python3 -m venv $(VENV)
 	$(PIP) install --upgrade pip
 	$(PIP) install -r config/requirements.txt
-	$(PIP) install ruff
+	$(PIP) install ruff==0.16.3 mypy==2.3.1 pre-commit==4.6.2
 
 run:
 	$(PYTHON) src/main.py
+
+dev:
+	$(VENV)/bin/uvicorn main:app --app-dir src --reload --host 0.0.0.0 --port 8000
 
 test:
 	$(PYTHON) -m pytest
@@ -25,6 +28,9 @@ lint:
 format:
 	$(VENV)/bin/ruff format .
 
+typecheck:
+	$(VENV)/bin/mypy
+
 docker-build:
 	docker build -f docker/Dockerfile -t sentiment-analysis-api .
 
@@ -35,3 +41,4 @@ clean:
 	find . -type d -name __pycache__ -not -path './$(VENV)/*' -exec rm -rf {} +
 	find . -type d -name .pytest_cache -not -path './$(VENV)/*' -exec rm -rf {} +
 	find . -type f -name '*.pyc' -not -path './$(VENV)/*' -delete
+	rm -f .coverage

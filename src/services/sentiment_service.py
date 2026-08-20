@@ -2,7 +2,6 @@ from repositories.sentiment_repository import analyze_sentiment
 
 
 class SentimentService:
-    
     def analyze_sentiment(self, text: str) -> dict[str, float]:
         return analyze_sentiment(text)
 
