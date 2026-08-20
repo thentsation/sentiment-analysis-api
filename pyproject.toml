@@ -15,6 +15,10 @@ warn_unused_ignores = true
 ignore_missing_imports = true
 exclude = "vendor"
 
+[[tool.mypy.overrides]]
+module = "vendor.*"
+ignore_errors = true
+
 [tool.coverage.run]
 omit = ["src/vendor/*"]
 

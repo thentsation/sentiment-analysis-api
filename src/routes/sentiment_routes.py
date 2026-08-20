@@ -1,8 +1,12 @@
-from fastapi import APIRouter, HTTPException
+from typing import Annotated
 
+from fastapi import APIRouter, Header, HTTPException
+
+from config import settings
 from models.models import (
     AnalyzeMultipleResponse,
     AnalyzeResponse,
+    CacheInvalidationResponse,
     MultiTextRequest,
     SentimentClassesResponse,
     SentimentScores,
@@ -10,10 +14,11 @@ from models.models import (
     StatisticsResponse,
     TextRequest,
 )
+from services.cache_service import sentiment_cache
 from services.sentiment_service import SentimentService
 
 router = APIRouter(prefix='/v1')
-sentiment_service = SentimentService()
+sentiment_service = SentimentService(cache=sentiment_cache)
 
 SENTIMENT_CLASSES = {
     'positive': 'Scores greater than 0.05',
@@ -33,8 +38,12 @@ def analyze(request: TextRequest) -> AnalyzeResponse:
     if not request.text:
         raise HTTPException(status_code=400, detail='No text provided')
 
-    scores = sentiment_service.analyze_sentiment(request.text)
-    return AnalyzeResponse(text=request.text, sentiment=SentimentScores(**scores))
+    scores = sentiment_service.analyze_sentiment(request.text, request.language)
+    return AnalyzeResponse(
+        text=request.text,
+        language=request.language,
+        sentiment=SentimentScores(**scores),
+    )
 
 
 @router.post(
@@ -48,7 +57,9 @@ def analyze_multiple(request: MultiTextRequest) -> AnalyzeMultipleResponse:
     if not request.texts:
         raise HTTPException(status_code=400, detail='No texts provided')
 
-    results = sentiment_service.analyze_multiple_sentiments(request.texts)
+    results = sentiment_service.analyze_multiple_sentiments(
+        request.texts, request.language
+    )
     return AnalyzeMultipleResponse(
         results={text: SentimentScores(**scores) for text, scores in results.items()}
     )
@@ -75,5 +86,26 @@ def analyze_statistics(request: MultiTextRequest) -> StatisticsResponse:
     if not request.texts:
         raise HTTPException(status_code=400, detail='No texts provided')
 
-    statistics = sentiment_service.analyze_statistics(request.texts)
+    statistics = sentiment_service.analyze_statistics(request.texts, request.language)
     return StatisticsResponse(statistics=SentimentStatistics(**statistics))
+
+
+def _ensure_admin(x_admin_token: str | None) -> None:
+    if settings.admin_token and x_admin_token != settings.admin_token:
+        raise HTTPException(status_code=401, detail='Invalid admin token')
+
+
+@router.delete(
+    '/cache',
+    response_model=CacheInvalidationResponse,
+    tags=['admin'],
+    summary='Invalidate the sentiment cache',
+    description='Clears all cached sentiment scores. Requires the X-Admin-Token header when '
+    'ADMIN_TOKEN is configured.',
+)
+def invalidate_cache(
+    x_admin_token: Annotated[str | None, Header()] = None,
+) -> CacheInvalidationResponse:
+    _ensure_admin(x_admin_token)
+    cleared = sentiment_cache.clear()
+    return CacheInvalidationResponse(status='cache invalidated', cleared=cleared)

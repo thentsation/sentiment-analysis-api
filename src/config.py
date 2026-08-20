@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     log_level: str = 'info'
     rate_limit_per_minute: int = 100
     cors_origins: list[str] = ['*']
+    admin_token: str = ''
+    cache_maxsize: int = 10_000
+    cache_ttl_seconds: float = 300.0
 
 
 settings = Settings()

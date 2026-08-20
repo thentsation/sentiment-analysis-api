@@ -1,18 +1,26 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
 MAX_TEXT_LENGTH = 10_000
 MAX_TEXTS = 100
 
+Language = Literal['en', 'pt']
+
 
 class TextRequest(BaseModel):
     text: Annotated[str, Field(max_length=MAX_TEXT_LENGTH, examples=['I love this!'])]
+    language: Language = Field(
+        default='en', description='Language of the input text', examples=['en']
+    )
 
 
 class MultiTextRequest(BaseModel):
     texts: list[Annotated[str, Field(max_length=MAX_TEXT_LENGTH)]] = Field(
         max_length=MAX_TEXTS, examples=[['I love this!', 'I hate this!']]
+    )
+    language: Language = Field(
+        default='en', description='Language of the input texts', examples=['en']
     )
 
 
@@ -25,6 +33,7 @@ class SentimentScores(BaseModel):
 
 class AnalyzeResponse(BaseModel):
     text: str
+    language: Language
     sentiment: SentimentScores
 
 
@@ -56,3 +65,8 @@ class RootResponse(BaseModel):
     docs: str
     health: str
     endpoints: list[str]
+
+
+class CacheInvalidationResponse(BaseModel):
+    status: str
+    cleared: int

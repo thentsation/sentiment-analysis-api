@@ -12,8 +12,34 @@ def test_analyze_success():
     assert response.status_code == 200
     body = response.json()
     assert body['text'] == 'I love this!'
+    assert body['language'] == 'en'
     assert set(body['sentiment'].keys()) == {'compound', 'pos', 'neu', 'neg'}
     assert body['sentiment']['compound'] > 0
+
+
+def test_analyze_portuguese_positive():
+    response = client.post(
+        '/v1/analyze', json={'text': 'Eu amo isso, é maravilhoso!', 'language': 'pt'}
+    )
+
+    assert response.status_code == 200
+    assert response.json()['language'] == 'pt'
+    assert response.json()['sentiment']['compound'] > 0
+
+
+def test_analyze_portuguese_negative():
+    response = client.post(
+        '/v1/analyze', json={'text': 'Eu odeio isso, é terrível!', 'language': 'pt'}
+    )
+
+    assert response.status_code == 200
+    assert response.json()['sentiment']['compound'] < 0
+
+
+def test_analyze_invalid_language_returns_422():
+    response = client.post('/v1/analyze', json={'text': 'bonjour', 'language': 'fr'})
+
+    assert response.status_code == 422
 
 
 def test_analyze_empty_text_returns_400():
@@ -78,7 +104,7 @@ def test_analyze_statistics_empty_list_returns_400():
 
 
 def test_analyze_internal_error_returns_500(monkeypatch):
-    def unexpected_error(text):
+    def unexpected_error(text, language='en'):
         raise RuntimeError('boom')
 
     monkeypatch.setattr(sentiment_service, 'analyze_sentiment', unexpected_error)
@@ -88,3 +114,34 @@ def test_analyze_internal_error_returns_500(monkeypatch):
 
     assert response.status_code == 500
     assert response.json()['detail'] == 'Internal server error'
+
+
+def test_delete_cache_without_token_by_default():
+    response = client.delete('/v1/cache')
+
+    assert response.status_code == 200
+    assert response.json()['status'] == 'cache invalidated'
+    assert response.json()['cleared'] >= 0
+
+
+def test_delete_cache_with_invalid_token_returns_401(monkeypatch):
+    from config import settings
+
+    monkeypatch.setattr(settings, 'admin_token', 'secret')
+
+    response = client.delete('/v1/cache')
+
+    assert response.status_code == 401
+    assert response.json()['detail'] == 'Invalid admin token'
+
+
+def test_delete_cache_with_valid_token(monkeypatch):
+    from config import settings
+
+    monkeypatch.setattr(settings, 'admin_token', 'secret')
+    client.post('/v1/analyze', json={'text': 'I love this!'})
+
+    response = client.delete('/v1/cache', headers={'X-Admin-Token': 'secret'})
+
+    assert response.status_code == 200
+    assert response.json()['cleared'] >= 1

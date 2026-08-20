@@ -1,3 +1,5 @@
+import pytest
+
 from repositories.sentiment_repository import analyze_sentiment
 
 
@@ -5,6 +7,27 @@ def test_analyze_sentiment_returns_all_scores():
     result = analyze_sentiment('I love this!')
 
     assert set(result.keys()) == {'compound', 'pos', 'neu', 'neg'}
+
+
+def test_analyze_sentiment_portuguese_positive():
+    result = analyze_sentiment('Eu amo isso, é maravilhoso!', 'pt')
+
+    assert result['compound'] > 0
+    assert result['pos'] > 0
+    assert result['neg'] == 0
+
+
+def test_analyze_sentiment_portuguese_negative():
+    result = analyze_sentiment('Eu odeio isso, é terrível!', 'pt')
+
+    assert result['compound'] < 0
+    assert result['neg'] > 0
+    assert result['pos'] == 0
+
+
+def test_analyze_sentiment_unsupported_language():
+    with pytest.raises(ValueError, match='Unsupported language'):
+        analyze_sentiment('bonjour', 'fr')
 
 
 def test_analyze_sentiment_positive_text():

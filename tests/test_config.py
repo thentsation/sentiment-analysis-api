@@ -10,6 +10,9 @@ def test_settings_defaults():
     assert settings.log_level == 'info'
     assert settings.rate_limit_per_minute == 100
     assert settings.cors_origins == ['*']
+    assert settings.admin_token == ''
+    assert settings.cache_maxsize == 10_000
+    assert settings.cache_ttl_seconds == 300.0
 
 
 def test_settings_env_override(monkeypatch):
