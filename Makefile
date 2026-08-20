@@ -1,4 +1,4 @@
-.PHONY: install run test lint format docker-build docker-run clean
+.PHONY: install run test coverage lint format docker-build docker-run clean
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python
@@ -15,6 +15,9 @@ run:
 
 test:
 	$(PYTHON) -m pytest
+
+coverage:
+	$(PYTHON) -m pytest --cov=src --cov-report=term-missing
 
 lint:
 	$(VENV)/bin/ruff check .

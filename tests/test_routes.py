@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from main import app
+from routes.sentiment_routes import sentiment_service
 
 client = TestClient(app)
 
@@ -58,3 +59,16 @@ def test_analyze_statistics_empty_list_returns_400():
 
     assert response.status_code == 400
     assert response.json()['detail'] == 'No texts provided'
+
+
+def test_analyze_internal_error_returns_500(monkeypatch):
+    def unexpected_error(text):
+        raise RuntimeError('boom')
+
+    monkeypatch.setattr(sentiment_service, 'analyze_sentiment', unexpected_error)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post('/analyze', json={'text': 'I love this!'})
+
+    assert response.status_code == 500
+    assert response.json()['detail'] == 'Internal server error'
