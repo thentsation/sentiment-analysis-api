@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.1 (2026-08-22)
+
+### Bug Fixes
+
+- **ci**: Ignora vendor do pip no scan trivy
+  ([`406bf33`](https://github.com/ntsation/sentiment-analysis-api/commit/406bf3390b4489a4914bc0abdffb9f0dd170595d))
+
+
 ## v1.2.0 (2026-08-22)
 
 ### Features
