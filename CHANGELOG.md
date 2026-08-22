@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.0 (2026-08-22)
+
+### Features
+
+- Ajusta deps
+  ([`d4e5b00`](https://github.com/ntsation/sentiment-analysis-api/commit/d4e5b00b5e88b7d285e43531890ca9acc9810152))
+
+
 ## v1.1.0 (2026-08-22)
 
 ### Bug Fixes
