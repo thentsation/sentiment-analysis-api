@@ -1,10 +1,20 @@
-name: Python Formatter Check
+name: Python CI
 
 on:
   push:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   schedule:
     - cron: "0 11 * * *" # 08:00 BRT (UTC-3)
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ruff-check:
@@ -76,3 +86,23 @@ jobs:
 
       - name: Run type check
         run: mypy
+
+  pip-audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit==2.7.3
+
+      - name: Audit dependencies
+        run: pip-audit -r config/requirements.txt
