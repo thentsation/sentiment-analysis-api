@@ -1,6 +1,6 @@
 [tool.ruff]
 target-version = "py311"
-extend-exclude = ["src/vendor"]
+extend-exclude = ["src/vendor", "*.md"]
 
 [tool.ruff.format]
 quote-style = "single"
