@@ -35,7 +35,7 @@ jobs:
         run: docker save sentiment:latest -o /tmp/image.tar
 
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@0.33.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           input: /tmp/image.tar
           severity: CRITICAL,HIGH
