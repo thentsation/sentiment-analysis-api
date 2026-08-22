@@ -105,4 +105,4 @@ jobs:
           pip install pip-audit==2.7.3
 
       - name: Audit dependencies
-        run: pip-audit -r config/requirements.txt
+        run: pip-audit -r config/requirements.lock

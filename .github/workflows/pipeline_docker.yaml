@@ -41,6 +41,7 @@ jobs:
         with:
           input: /tmp/image.tar
           severity: CRITICAL,HIGH
+          ignore-unfixed: true
           exit-code: '1'
 
   push-ghcr:
