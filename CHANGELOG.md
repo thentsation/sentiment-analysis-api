@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.3.0 (2026-08-22)
+
+### Chores
+
+- **ci**: Add PR and issue templates
+  ([`0cf15d6`](https://github.com/ntsation/sentiment-analysis-api/commit/0cf15d65a18dc968fbaa2b555795dd41e581c55c))
+
+### Features
+
+- **ci**: Notify portfolio to rebuild on push to main
+  ([`b9d17e2`](https://github.com/ntsation/sentiment-analysis-api/commit/b9d17e2ea4223f3bc57d34f515973ca2a7b091d9))
+
+
 ## v1.2.1 (2026-08-22)
 
 ### Bug Fixes
