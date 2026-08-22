@@ -3,6 +3,8 @@ name: Docker CI/CD
 on:
   push:
   pull_request:
+  schedule:
+    - cron: "0 11 * * *" # 08:00 BRT (UTC-3)
 
 jobs:
   build-and-test:
