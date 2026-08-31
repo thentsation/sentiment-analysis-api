@@ -58,6 +58,10 @@ pluggy==1.6.0
     #   pytest-cov
 prometheus-client==0.26.0
     # via -r config/requirements.txt
+psycopg==3.2.10
+    # via -r config/requirements.txt
+psycopg-binary==3.2.10 ; implementation_name != 'pypy'
+    # via psycopg
 pydantic==2.13.4
     # via
     #   fastapi
@@ -90,6 +94,7 @@ typing-extensions==4.16.0
     # via
     #   anyio
     #   fastapi
+    #   psycopg
     #   pydantic
     #   pydantic-core
     #   starlette
@@ -99,6 +104,8 @@ typing-inspection==0.4.4
     #   fastapi
     #   pydantic
     #   pydantic-settings
+tzdata==2026.3 ; sys_platform == 'win32'
+    # via psycopg
 urllib3==2.7.0
     # via sentry-sdk
 uvicorn==0.52.4

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     cache_maxsize: int = 10_000
     cache_ttl_seconds: float = 300.0
     job_store_maxsize: int = 100
+    database_url: str = ''
     sentry_dsn: str = ''
     sentry_traces_sample_rate: float = 1.0
 

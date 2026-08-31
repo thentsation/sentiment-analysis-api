@@ -25,7 +25,9 @@ from services.sentiment_service import SentimentService
 
 router = APIRouter(prefix='/v1')
 sentiment_service = SentimentService(cache=sentiment_cache)
-job_store = JobStore(maxsize=settings.job_store_maxsize)
+job_store = JobStore(
+    maxsize=settings.job_store_maxsize, database_url=settings.database_url
+)
 
 SENTIMENT_CLASSES = {
     'positive': 'Scores greater than 0.05',

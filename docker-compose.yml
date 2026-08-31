@@ -3,8 +3,12 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
+    container_name: sentiment-api
+    restart: unless-stopped
+    env_file:
+      - .env
     ports:
-      - '8000:8000'
+      - '8010:8000'
     environment:
       - HOST=0.0.0.0
       - PORT=8000
