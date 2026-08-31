@@ -2,6 +2,49 @@
 
 <!-- version list -->
 
+## v1.3.1 (2026-08-31)
+
+### Bug Fixes
+
+- Import Iterator from collections.abc to avoid redundancy
+  ([`d20cffd`](https://github.com/ntsation/sentiment-analysis-api/commit/d20cffd2c13bab6d51a9e162e1c9a3ebbd34f492))
+
+### Chores
+
+- **ci**: Bump docker/build-push-action from 6 to 7
+  ([`8dd662b`](https://github.com/ntsation/sentiment-analysis-api/commit/8dd662b61f36fc59bda8bbbc741db3a0ed77c15f))
+
+- **ci**: Bump docker/login-action from 3 to 4
+  ([`ae79aa5`](https://github.com/ntsation/sentiment-analysis-api/commit/ae79aa587735b78770bfef04550b66537059968f))
+
+- **ci**: Bump docker/metadata-action from 5 to 6
+  ([`af2881d`](https://github.com/ntsation/sentiment-analysis-api/commit/af2881d10132021ccc014c18dddd0429f2ea8002))
+
+- **ci**: Bump docker/setup-qemu-action from 3 to 4
+  ([`75a61f6`](https://github.com/ntsation/sentiment-analysis-api/commit/75a61f624ad3d4e983478a1de60cc26cf10ded5a))
+
+- **ci**: Bump python-semantic-release/python-semantic-release
+  ([`8395420`](https://github.com/ntsation/sentiment-analysis-api/commit/8395420b03c45ae69e759dbf199e86adbbf63af6))
+
+- **deps**: Bump locust from 2.46.3 to 2.46.4 in /config
+  ([`3477052`](https://github.com/ntsation/sentiment-analysis-api/commit/34770529cb0837d4d7d585c64269eba59c3c6d75))
+
+- **deps**: Bump msgpack from 1.2.1 to 1.2.2 in /config
+  ([`980cbe7`](https://github.com/ntsation/sentiment-analysis-api/commit/980cbe7fdec12d5e3041d82a7c0ec1e3c77bccad))
+
+- **deps**: Bump ruff from 0.16.3 to 0.16.4 in /config
+  ([`345a47d`](https://github.com/ntsation/sentiment-analysis-api/commit/345a47d55edf6ebd168dc80452b0988f5962d880))
+
+- **deps**: Bump ruff from 0.16.4 to 0.16.5 in /config
+  ([`573c7ea`](https://github.com/ntsation/sentiment-analysis-api/commit/573c7ea251d6916b9de2efe4c00e75126a7d2c36))
+
+- **deps**: Bump sentry-sdk from 2.68.0 to 2.68.1 in /config
+  ([`6de1782`](https://github.com/ntsation/sentiment-analysis-api/commit/6de17824bdb23c54eebebc36a2ac9cfa1f460ff6))
+
+- **deps**: Update lockfile
+  ([`093f0de`](https://github.com/ntsation/sentiment-analysis-api/commit/093f0dee202431fb1a2144533cd582e04a4c95ab))
+
+
 ## v1.3.0 (2026-08-22)
 
 ### Chores
