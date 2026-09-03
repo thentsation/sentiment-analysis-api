@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.3.6 (2026-09-03)
+
+### Bug Fixes
+
+- Point GHCR_IMAGE at the thentsation org after the repo transfer
+  ([`5ea2549`](https://github.com/thentsation/sentiment-analysis-api/commit/5ea254902ba5b4264643dcbbdd555044cc3f9d7c))
+
+
 ## v1.3.5 (2026-09-03)
 
 ### Bug Fixes
