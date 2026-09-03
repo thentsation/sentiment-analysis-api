@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.3.4 (2026-09-03)
+
+### Bug Fixes
+
+- Use ETag-based optimistic concurrency for security list updates
+  ([`841368d`](https://github.com/thentsation/sentiment-analysis-api/commit/841368dd46d7754e52ac9c645a0ff0c71b529da9))
+
+
 ## v1.3.3 (2026-09-03)
 
 ### Bug Fixes
