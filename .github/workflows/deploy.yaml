@@ -13,7 +13,7 @@ env:
   OCI_COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }}
   OCI_SECURITY_LIST_ID: ${{ secrets.OCI_SECURITY_LIST_ID }}
   OCIR_REPOSITORY: sentiment-analysis-api
-  GHCR_IMAGE: ghcr.io/ntsation/sentiment-analysis-api
+  GHCR_IMAGE: ghcr.io/thentsation/sentiment-analysis-api
   CONTAINER_NAME: sentiment-analysis-api
 
 jobs:
