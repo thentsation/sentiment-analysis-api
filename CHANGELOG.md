@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.3.5 (2026-09-03)
+
+### Bug Fixes
+
+- Drop GHA layer cache from the GHCR push build
+  ([`96af8ce`](https://github.com/thentsation/sentiment-analysis-api/commit/96af8ced72b3d8dc13e95f809d29b097f89bfb1a))
+
+
 ## v1.3.4 (2026-09-03)
 
 ### Bug Fixes
