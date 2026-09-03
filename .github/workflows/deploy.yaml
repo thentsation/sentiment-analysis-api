@@ -81,12 +81,14 @@ jobs:
           RUNNER_IP=$(curl -s https://checkip.amazonaws.com)
           echo "RUNNER_IP=$RUNNER_IP" >> "$GITHUB_ENV"
 
-          oci network security-list get --security-list-id "$OCI_SECURITY_LIST_ID" \
-            --query 'data."ingress-security-rules"' > /tmp/current-rules.json
+          for attempt in $(seq 1 8); do
+            oci network security-list get --security-list-id "$OCI_SECURITY_LIST_ID" > /tmp/sl.json
+            ETAG=$(python3 -c "import json; print(json.load(open('/tmp/sl.json'))['etag'])")
 
-          python3 -c "
+            python3 -c "
           import json
-          rules = json.load(open('/tmp/current-rules.json'))
+          sl = json.load(open('/tmp/sl.json'))
+          rules = sl['data']['ingress-security-rules']
           rules.append({
               'description': 'CI runner (temporario)',
               'icmp-options': None,
@@ -99,8 +101,11 @@ jobs:
           })
           json.dump(rules, open('/tmp/new-rules.json', 'w'))
           "
-          oci network security-list update --security-list-id "$OCI_SECURITY_LIST_ID" \
-            --ingress-security-rules file:///tmp/new-rules.json --force
+            oci network security-list update --security-list-id "$OCI_SECURITY_LIST_ID" \
+              --ingress-security-rules file:///tmp/new-rules.json --if-match "$ETAG" --force && break
+            echo "Conflito de concorrência ao liberar IP (tentativa $attempt), tentando de novo..."
+            sleep $(( (RANDOM % 5) + 1 ))
+          done
 
       - name: Deploy via SSH
         run: |
@@ -127,17 +132,21 @@ jobs:
       - name: Revogar IP do runner na porta 22
         if: always()
         run: |
-          oci network security-list get --security-list-id "$OCI_SECURITY_LIST_ID" \
-            --query 'data."ingress-security-rules"' > /tmp/current-rules.json
+          for attempt in $(seq 1 8); do
+            oci network security-list get --security-list-id "$OCI_SECURITY_LIST_ID" > /tmp/sl.json
+            ETAG=$(python3 -c "import json; print(json.load(open('/tmp/sl.json'))['etag'])")
 
-          python3 -c "
+            python3 -c "
           import json
-          rules = json.load(open('/tmp/current-rules.json'))
-          rules = [r for r in rules if r.get('source') != '$RUNNER_IP/32']
+          sl = json.load(open('/tmp/sl.json'))
+          rules = [r for r in sl['data']['ingress-security-rules'] if r.get('source') != '$RUNNER_IP/32']
           json.dump(rules, open('/tmp/new-rules.json', 'w'))
           "
-          oci network security-list update --security-list-id "$OCI_SECURITY_LIST_ID" \
-            --ingress-security-rules file:///tmp/new-rules.json --force
+            oci network security-list update --security-list-id "$OCI_SECURITY_LIST_ID" \
+              --ingress-security-rules file:///tmp/new-rules.json --if-match "$ETAG" --force && break
+            echo "Conflito de concorrência ao revogar IP (tentativa $attempt), tentando de novo..."
+            sleep $(( (RANDOM % 5) + 1 ))
+          done
 
       - name: Smoke test (/health)
         run: |
