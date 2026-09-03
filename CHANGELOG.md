@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.3.3 (2026-09-03)
+
+### Bug Fixes
+
+- Preserve trailing newline when writing SSH key from secret
+  ([`4d30adc`](https://github.com/thentsation/sentiment-analysis-api/commit/4d30adca1afb4c8045f8fec4c055e1491726b9c2))
+
+
 ## v1.3.2 (2026-09-03)
 
 ### Bug Fixes
