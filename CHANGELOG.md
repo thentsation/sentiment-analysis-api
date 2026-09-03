@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.3.2 (2026-09-03)
+
+### Bug Fixes
+
+- Update pip-audit command to ignore specific vulnerability
+  ([`e62ad58`](https://github.com/ntsation/sentiment-analysis-api/commit/e62ad58a3348187b6b5a33eb9d3ad7ec8e99161c))
+
+### Chores
+
+- **deps**: Bump psycopg from 3.2.10 to 3.3.4 in /config
+  ([`eac6ffc`](https://github.com/ntsation/sentiment-analysis-api/commit/eac6ffc90e16508cedefbf2ab366f9b2c2c55c57))
+
+
 ## v1.3.1 (2026-08-31)
 
 ### Bug Fixes
