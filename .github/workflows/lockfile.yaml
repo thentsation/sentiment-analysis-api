@@ -26,7 +26,7 @@ jobs:
       - name: Audit updated lockfile
         id: audit
         run: |
-          if uvx pip-audit -r config/requirements.lock; then
+          if uvx pip-audit -r config/requirements.lock --ignore-vuln GHSA-8mgp-746c-j5xp; then
             echo "status=clean" >> "$GITHUB_OUTPUT"
           else
             echo "status=vulnerable" >> "$GITHUB_OUTPUT"

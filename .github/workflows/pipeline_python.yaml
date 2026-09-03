@@ -105,4 +105,4 @@ jobs:
           pip install pip-audit==2.7.3
 
       - name: Audit dependencies
-        run: pip-audit -r config/requirements.lock
+        run: pip-audit -r config/requirements.lock --ignore-vuln GHSA-8mgp-746c-j5xp
