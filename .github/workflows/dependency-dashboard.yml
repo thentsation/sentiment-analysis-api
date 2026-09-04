@@ -32,7 +32,7 @@ jobs:
             fi
             echo ""
             echo "## 🛡️ Alertas de segurança abertos (Dependabot)"
-            ALERTS=$(gh api "repos/${{ github.repository }}/dependabot/alerts?state=open" --jq '.[] | "- **\(.security_advisory.severity | ascii_upcase)** \(.security_advisory.summary) — [\(.dependency.package.name)](\(.html_url))"' 2>/dev/null)
+            ALERTS=$(gh api "repos/${{ github.repository }}/dependabot/alerts?state=open" --jq '.[] | "- **\(.security_advisory.severity | ascii_upcase)** \(.security_advisory.summary) — [\(.dependency.package.name)](\(.html_url))"') || true
             if [ -z "$ALERTS" ]; then
               echo "_Nenhum alerta aberto (ou sem permissão para ler alertas)._"
             else
