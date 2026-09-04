@@ -1,0 +1,53 @@
+name: Dependency Dashboard
+
+on:
+  schedule:
+    - cron: "0 12 * * 1" # segundas 09:00 BRT (UTC-3)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  security-events: read
+
+jobs:
+  update-dashboard:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Build dashboard body
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "_Atualizado automaticamente em $(date -u +'%Y-%m-%d %H:%M UTC')._"
+            echo ""
+            echo "## 🔺 PRs do Dependabot aguardando revisão (major version)"
+            MAJOR_PRS=$(gh pr list --label dependabot-major --state open --json number,title,url --jq '.[] | "- [#\(.number)](\(.url)) \(.title)"')
+            if [ -z "$MAJOR_PRS" ]; then
+              echo "_Nenhum PR major pendente._"
+            else
+              echo "$MAJOR_PRS"
+            fi
+            echo ""
+            echo "## 🛡️ Alertas de segurança abertos (Dependabot)"
+            ALERTS=$(gh api "repos/${{ github.repository }}/dependabot/alerts?state=open" --jq '.[] | "- **\(.security_advisory.severity | ascii_upcase)** \(.security_advisory.summary) — [\(.dependency.package.name)](\(.html_url))"' 2>/dev/null)
+            if [ -z "$ALERTS" ]; then
+              echo "_Nenhum alerta aberto (ou sem permissão para ler alertas)._"
+            else
+              echo "$ALERTS"
+            fi
+          } > /tmp/dashboard-body.md
+
+      - name: Create or update dashboard issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="Dependency & Security Dashboard"
+          NUM=$(gh issue list --search "$TITLE in:title" --state open --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -n1)
+          if [ -n "$NUM" ]; then
+            gh issue edit "$NUM" --body-file /tmp/dashboard-body.md
+          else
+            gh issue create --title "$TITLE" --body-file /tmp/dashboard-body.md
+          fi
