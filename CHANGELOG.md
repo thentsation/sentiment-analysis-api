@@ -2,6 +2,41 @@
 
 <!-- version list -->
 
+## v1.4.0 (2026-09-04)
+
+### Bug Fixes
+
+- Gracefully handle missing Dependabot alerts permission
+  ([`a2d14d3`](https://github.com/thentsation/sentiment-analysis-api/commit/a2d14d32f81f2a5b5a93d705e5ed0061ec54a981))
+
+- Pass --repo explicitly to gh CLI calls with no checkout
+  ([`5bc7d9d`](https://github.com/thentsation/sentiment-analysis-api/commit/5bc7d9d5448e1af851596fc44c5c7e889d266968))
+
+- Send the workflow warning annotation to stderr, not the issue body
+  ([`998c5e3`](https://github.com/thentsation/sentiment-analysis-api/commit/998c5e34a1eb7d20e608e55290dc9a66ccc5594d))
+
+- Use RELEASE_PAT to let semantic-release push past branch protection
+  ([`fa775a0`](https://github.com/thentsation/sentiment-analysis-api/commit/fa775a001b9326a504ef33d4032415b10f7a9601))
+
+### Chores
+
+- **deps**: Bump psycopg from 3.3.4 to 3.3.5 in /config
+  ([`26ed78b`](https://github.com/thentsation/sentiment-analysis-api/commit/26ed78b5452aebc7ca689c0f57a2780421a45cf7))
+
+### Continuous Integration
+
+- Add Dependency & Security Dashboard, label major Dependabot PRs
+  ([`729b6ac`](https://github.com/thentsation/sentiment-analysis-api/commit/729b6aca400ba32f6fb44879723aa9cc33e308d8))
+
+- Gate Docker pipeline on CI success and add Dependabot auto-merge
+  ([`2fd2041`](https://github.com/thentsation/sentiment-analysis-api/commit/2fd2041d3720cedaa7e82d5ece920deabbf9b4a9))
+
+### Features
+
+- Auto-close the dashboard issue when nothing is pending
+  ([`03eb650`](https://github.com/thentsation/sentiment-analysis-api/commit/03eb6502683a1d46cde0ac443820abfa1e0fcde6))
+
+
 ## v1.3.6 (2026-09-03)
 
 ### Bug Fixes
