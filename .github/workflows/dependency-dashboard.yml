@@ -18,7 +18,7 @@ jobs:
     steps:
       - name: Build dashboard body
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.DASHBOARD_PAT || secrets.GITHUB_TOKEN }}
         run: |
           {
             echo "_Atualizado automaticamente em $(date -u +'%Y-%m-%d %H:%M UTC')._"
@@ -32,9 +32,15 @@ jobs:
             fi
             echo ""
             echo "## 🛡️ Alertas de segurança abertos (Dependabot)"
-            ALERTS=$(gh api "repos/${{ github.repository }}/dependabot/alerts?state=open" --jq '.[] | "- **\(.security_advisory.severity | ascii_upcase)** \(.security_advisory.summary) — [\(.dependency.package.name)](\(.html_url))"') || true
-            if [ -z "$ALERTS" ]; then
-              echo "_Nenhum alerta aberto (ou sem permissão para ler alertas)._"
+            set +e
+            ALERTS=$(gh api "repos/${{ github.repository }}/dependabot/alerts?state=open" --jq '.[] | "- **\(.security_advisory.severity | ascii_upcase)** \(.security_advisory.summary) — [\(.dependency.package.name)](\(.html_url))"' 2>/tmp/alerts_err)
+            ALERTS_STATUS=$?
+            set -e
+            if [ $ALERTS_STATUS -ne 0 ]; then
+              echo "::warning::Não foi possível ler os alertas do Dependabot. Configure o secret DASHBOARD_PAT (PAT com permissão 'Dependabot alerts: read'). Detalhe: $(cat /tmp/alerts_err)"
+              echo "_Sem acesso aos alertas de segurança — configure o secret \`DASHBOARD_PAT\` (token com permissão \"Dependabot alerts: read\") para habilitar esta seção._"
+            elif [ -z "$ALERTS" ]; then
+              echo "_Nenhum alerta aberto._"
             else
               echo "$ALERTS"
             fi
