@@ -24,7 +24,7 @@ jobs:
             echo "_Atualizado automaticamente em $(date -u +'%Y-%m-%d %H:%M UTC')._"
             echo ""
             echo "## 🔺 PRs do Dependabot aguardando revisão (major version)"
-            MAJOR_PRS=$(gh pr list --label dependabot-major --state open --json number,title,url --jq '.[] | "- [#\(.number)](\(.url)) \(.title)"')
+            MAJOR_PRS=$(gh pr list --repo "${{ github.repository }}" --label dependabot-major --state open --json number,title,url --jq '.[] | "- [#\(.number)](\(.url)) \(.title)"')
             if [ -z "$MAJOR_PRS" ]; then
               echo "_Nenhum PR major pendente._"
             else
@@ -45,9 +45,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TITLE="Dependency & Security Dashboard"
-          NUM=$(gh issue list --search "$TITLE in:title" --state open --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -n1)
+          NUM=$(gh issue list --repo "${{ github.repository }}" --search "$TITLE in:title" --state open --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -n1)
           if [ -n "$NUM" ]; then
-            gh issue edit "$NUM" --body-file /tmp/dashboard-body.md
+            gh issue edit "$NUM" --repo "${{ github.repository }}" --body-file /tmp/dashboard-body.md
           else
-            gh issue create --title "$TITLE" --body-file /tmp/dashboard-body.md
+            gh issue create --repo "${{ github.repository }}" --title "$TITLE" --body-file /tmp/dashboard-body.md
           fi

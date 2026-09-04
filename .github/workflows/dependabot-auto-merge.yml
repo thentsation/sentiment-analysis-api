@@ -31,7 +31,7 @@ jobs:
       - name: Label major version bumps for manual review
         if: steps.metadata.outputs.update-type == 'version-update:semver-major'
         run: |
-          gh label create "dependabot-major" --color FBCA04 --description "Dependabot major-version bump awaiting manual review" --force
+          gh label create "dependabot-major" --repo "${{ github.repository }}" --color FBCA04 --description "Dependabot major-version bump awaiting manual review" --force
           gh pr edit "$PR_URL" --add-label "dependabot-major"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
