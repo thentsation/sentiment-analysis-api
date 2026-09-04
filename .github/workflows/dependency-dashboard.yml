@@ -37,7 +37,7 @@ jobs:
             ALERTS_STATUS=$?
             set -e
             if [ $ALERTS_STATUS -ne 0 ]; then
-              echo "::warning::Não foi possível ler os alertas do Dependabot. Configure o secret DASHBOARD_PAT (PAT com permissão 'Dependabot alerts: read'). Detalhe: $(cat /tmp/alerts_err)"
+              echo "::warning::Não foi possível ler os alertas do Dependabot. Configure o secret DASHBOARD_PAT (PAT com permissão 'Dependabot alerts: read'). Detalhe: $(cat /tmp/alerts_err)" >&2
               echo "_Sem acesso aos alertas de segurança — configure o secret \`DASHBOARD_PAT\` (token com permissão \"Dependabot alerts: read\") para habilitar esta seção._"
             elif [ -z "$ALERTS" ]; then
               echo "_Nenhum alerta aberto._"
