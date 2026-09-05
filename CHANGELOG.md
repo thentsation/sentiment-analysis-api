@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.4.1 (2026-09-05)
+
+### Bug Fixes
+
+- Keep pytest/httpx out of the runtime image and prune stale image tags
+  ([`efc5fb5`](https://github.com/thentsation/sentiment-analysis-api/commit/efc5fb5347437bb041d6f053858de335c79d8c0a))
+
+
 ## v1.4.0 (2026-09-04)
 
 ### Bug Fixes
