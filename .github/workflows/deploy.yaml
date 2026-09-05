@@ -127,6 +127,7 @@ jobs:
             docker rm "$CONTAINER_NAME" || true
             docker run -d --name "$CONTAINER_NAME" --restart unless-stopped -p 80:8000 "$OCIR_URI:$IMAGE_TAG"
             docker image prune -f
+            docker images "$OCIR_URI" --format '{{.Tag}}' | grep -xv "$IMAGE_TAG" | xargs -r -I{} docker rmi "$OCIR_URI:{}" || true
           EOF
 
       - name: Revogar IP do runner na porta 22
