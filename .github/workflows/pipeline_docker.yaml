@@ -4,6 +4,10 @@ on:
   workflow_run:
     workflows: ["Python CI"]
     types: [completed]
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   schedule:
     - cron: "0 11 * * *" # 08:00 BRT (UTC-3)
   release:
