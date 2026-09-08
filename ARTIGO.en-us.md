@@ -1,62 +1,39 @@
 [🇧🇷 Português](ARTIGO.md) | 🇺🇸 English
 
-# From toy API to production: evolving a sentiment analysis API
+# Taking an API I wrote in one afternoon seriously
 
-How a ~100-line FastAPI app turned into a service with tests, CI, caching, multi-language support, async batch processing, SSE, and observability — with real benchmark numbers at the end.
+The first version of this API was about 100 lines, ran VADER over English text, and was exactly what it sounds like: an exercise. I decided to treat it like it was actually going to production, and that changed almost everything — except the original idea.
 
-## The starting point
+## What I started with
 
-The project started like most learning projects: a FastAPI app exposing VADER (NLTK) for sentiment analysis, organized in layers (`routes` → `services` → `repositories`), with a Dockerfile and a pipeline that ran `ruff` on `main`. It worked. And that was it.
+A FastAPI app exposing VADER (NLTK) for sentiment analysis, already organized in layers (`routes` → `services` → `repositories`), with a Dockerfile and a pipeline that ran `ruff` on `main`. It ran. That was it.
 
-The problem is that "it works on my machine" isn't an engineering criterion. It was missing everything that separates a tutorial example from a service you'd put your name on:
+"Works on my machine" isn't an engineering criterion, and I knew that while writing it. It was missing everything that separates a tutorial example from something I'd put my name on: zero automated tests, CI that only ran after a push to `main` (meaning I'd find out I broke something after the merge), no error handling at all — any exception leaked its stack trace to the client —, an unpinned `requirements.txt` with an amusing bug of its own — a `routes` line listed as a PyPI dependency that broke `pip install` on a clean environment — and a Dockerfile with `COPY ../` (which doesn't even work with a root-level build context) running as root.
 
-- Zero automated tests
-- CI that only ran on push to `main`
-- No error handling (any exception leaked its stack trace)
-- `requirements.txt` with no version pinning — and a bug: a `routes` line listed as a PyPI dependency broke `pip install` on a clean environment
-- A Dockerfile with `COPY ../` (which doesn't even work with a root-level build context) and running as root
+## The rule I followed: no new feature without a safety net underneath
 
-This article is the path from there to here.
+Before touching anything new, I built the foundation.
 
-## First stop: the foundation (tests, CI, Docker)
+The app already had the `routes` → `services` → `repositories` split, so the tests followed the same boundaries. At the **repository** layer (`test_repository.py`), VADER is deterministic, so I tested clearly positive, negative, and neutral texts, checking the sign of the scores (`compound`, `pos`, `neg`, `neu`) with no mocks at all — when the dependency is fast and deterministic, mocking is just noise. At the **service** layer (`test_service.py`), the repository is mocked because what matters there is the business logic: threshold-based classification (`> 0.05`, `< -0.05`), statistics aggregation, boundary values. At the **routes** layer (`test_routes.py`), the endpoints via `TestClient`, covering success plus the 400s (empty text/list) and 422s (payload over the limits).
 
-Before any new feature, the foundation. The rule I followed: **no new code without a safety net underneath.**
+The original pipeline only ran on `main`; I changed it to run on every push and PR, with parallel jobs — lint, format check, mypy, and tests with a minimum coverage threshold across a Python 3.11/3.12 matrix.
 
-### Tests in three layers
-
-The application already had the `routes` → `services` → `repositories` separation, so the tests followed the same boundaries:
-
-- **Repository** (`test_repository.py`): VADER is deterministic, so I tested clearly positive, negative, and neutral texts, checking the signs of the scores (`compound`, `pos`, `neg`, `neu`) — no mocks. When the dependency is fast and deterministic, mocking is just noise.
-- **Service** (`test_service.py`): here the repository is mocked, because what matters is the business logic — threshold-based classification (`> 0.05`, `< -0.05`), statistics aggregation, boundary values.
-- **Routes** (`test_routes.py`): the endpoints via `TestClient`, covering success as well as 400 errors (empty text/list) and 422 errors (payload over the limits).
-
-### CI that runs on every commit
-
-The original pipeline only ran on `main` — meaning you'd find out you broke something *after* the merge. I changed it to run on every push and PR, with parallel jobs: lint, format check, mypy, and tests with a minimum coverage threshold across a Python 3.11/3.12 matrix.
-
-### Docker without surprises
-
-A multi-stage Dockerfile based on `python:3.12-slim`, a non-root user, and — an important detail — the **VADER lexicon pre-downloaded at build time**. Without that, the first request in production would depend on a runtime download. Cold start shouldn't depend on the network.
+Docker got a multi-stage rebuild on `python:3.12-slim`, a non-root user, and one detail I almost skipped: the **VADER lexicon pre-downloaded at build time**.
 
 ```dockerfile
 ENV NLTK_DATA=/usr/local/share/nltk_data
 RUN python -c "import nltk; nltk.download('vader_lexicon', download_dir='/usr/local/share/nltk_data')"
 ```
 
-## The API itself: contract first
+Without that, the first production request would depend on a runtime download — and cold start shouldn't depend on the network.
 
-With the foundation in place, the next step was to treat the API as a **product with a contract**, not as an HTTP script:
+## Treating the API as a contract, not an HTTP script
 
-- **Versioning** (`/v1/...`): lets you evolve the API without breaking clients.
-- **Rich OpenAPI**: `response_model`, `summary`, `description`, examples, and tags on every endpoint. Typed response schemas (`AnalyzeResponse`, `SentimentScores`) instead of loose dictionaries — if the contract lives in the type, mypy and `/docs` do the work for you.
-- **Payload validation**: `Field(max_length=10_000)` on the text and `max_length=100` on the list. A public API with no size limit is a toy DoS just waiting to happen.
-- **`GET /`** with metadata and **`GET /health`** for liveness probes.
+With the foundation in place, the next step was to stop thinking of this as "an endpoint that returns JSON" and start thinking of it as a contract: versioning under `/v1/...` so I can evolve it without breaking anyone already integrated; a rich OpenAPI spec, with `response_model`, `summary`, `description`, examples, and tags on every endpoint; typed response schemas (`AnalyzeResponse`, `SentimentScores`) instead of loose dictionaries, because if the contract lives in the type, mypy and `/docs` do the work for me; payload validation (`Field(max_length=10_000)` on the text, `max_length=100` on the list) — a public API with no size limit is a toy DoS waiting to happen; and `GET /` with metadata plus `GET /health` for liveness probes.
 
-## Features worth a paragraph each
+## Decisions worth a paragraph each
 
-### Multi-language: VADER for English, LeIA for Portuguese
-
-VADER only understands English. For PT-BR, I used [LeIA](https://github.com/RafJaa/LeIA) — a VADER fork adapted for Portuguese. The integration is a dispatcher in the repository:
+**Multi-language without rewriting the pipeline.** VADER only understands English. For PT-BR I used [LeIA](https://github.com/RafJaa/LeIA), a VADER fork adapted for Portuguese, plugged in as a simple dispatcher in the repository:
 
 ```python
 ANALYZERS = {
@@ -71,11 +48,9 @@ def analyze_sentiment(text: str, language: str = 'en') -> dict[str, float]:
     return analyzer.polarity_scores(text)
 ```
 
-A fun fact that earned its own "lessons learned" entry: the `leia` package published on PyPI is an **empty stub** — the real project was never packaged. The fix: I vendored the module (single file + lexicons) into `src/vendor/leia/`, excluding that folder from lint and mypy. Third-party code under my own version control, immutable and auditable.
+The detail that turned into an important footnote: the `leia` package published on PyPI is an **empty stub** — the real project was never packaged properly. I fixed it by vendoring the module (single file + lexicons) into `src/vendor/leia/`, excluded from lint and mypy. Third-party code under my own version control, immutable and auditable, instead of depending on a broken package on PyPI.
 
-### Caching: the cheapest, most profitable feature
-
-Sentiment analysis is pure CPU-bound work and **deterministic**: same text, same score, every time. It's the perfect caching use case. I implemented an in-memory cache with TTL and LRU eviction, keyed by `(language, text)`:
+**Caching, because the workload is deterministic.** Sentiment analysis here is pure CPU-bound work and deterministic — same text, same score, every time. It's the perfect caching use case. I implemented an in-memory cache with TTL and LRU eviction, keyed by `(language, text)`:
 
 ```python
 def analyze_sentiment(self, text: str, language: str = 'en') -> dict[str, float]:
@@ -89,29 +64,19 @@ def analyze_sentiment(self, text: str, language: str = 'en') -> dict[str, float]
     return result
 ```
 
-Workloads with repeated texts (reviews, social media, monitoring) get a high hit rate — and the numbers at the end show the payoff.
+Workloads with repeated text (reviews, social media, monitoring) get a high hit rate, and the numbers below show the payoff.
 
-### Async batch with job ID
+**Batch without holding the connection.** `POST /v1/analyze_batch` responds with `202 Accepted` and a job ID right away; processing runs in the background, and the client polls `GET /v1/results/{job_id}` until `completed` (or `failed`).
 
-A large batch shouldn't hold the connection open. `POST /v1/analyze_batch` responds with `202 Accepted` and a job ID right away; processing runs in the background, and the client polls `GET /v1/results/{job_id}` until `completed` (or `failed`).
+**Streaming without WebSocket.** For anyone who wants progressive results, `POST /v1/analyze_stream` responds with Server-Sent Events — one `data` event per analyzed text, ending with `event: done`. Works with a plain `curl -N`.
 
-### Streaming with SSE
+## I can't fix what I can't see
 
-For anyone who wants progressive results, `POST /v1/analyze_stream` responds with Server-Sent Events: one `data` event per analyzed text, ending with `event: done`. Simple, works with a plain `curl -N`, and doesn't need WebSocket.
+`GET /metrics` in Prometheus format, with HTTP counters by method/route/status, a latency histogram, sentiment distribution by language, cache hits/misses, and job counts by status. Structured logging (`structlog`) in JSON, with a `request_id` per request — generated or propagated via `X-Request-ID` — because when something breaks I want to filter by an ID and see the exact line, not hunt through free text. An `X-Process-Time-Ms` header on every response. Optional Sentry, switched on just by setting `SENTRY_DSN`. Rate limiting per IP (429 + `Retry-After`) and security headers. Everything configurable via environment variables through `pydantic-settings`, with a `make dev` target that boots with reload for day-to-day work.
 
-## Observability: you can't fix what you can't see
+## The numbers
 
-- **`GET /metrics` in Prometheus format**: HTTP counters by method/route/status, a latency histogram, sentiment distribution by language, cache hits/misses, and job counts by status.
-- **Structured logging (structlog)** in JSON, with a `request_id` generated per request (or propagated from the client via `X-Request-ID`). When something breaks, you filter by an ID and see the exact line.
-- **`X-Process-Time-Ms` header** on every response.
-- **Optional Sentry** — set `SENTRY_DSN` and you're done, no code changes needed.
-- **Rate limiting** per IP (429 + `Retry-After`) and security headers.
-
-Everything is configurable via environment variables through `pydantic-settings`, with a `make dev` target that boots with reload for day-to-day work.
-
-## The numbers (the part that matters)
-
-Full methodology in the repository (`docs/benchmarks/`), but the summary: locust, 20 virtual users, 30s per scenario, 1 worker, short texts:
+Full methodology lives in `docs/benchmarks/`; the summary is locust with 20 virtual users, 30s per scenario, 1 worker, short texts:
 
 | Scenario | req/s | p50 | p95 | p99 |
 | --- | --- | --- | --- | --- |
@@ -119,20 +84,12 @@ Full methodology in the repository (`docs/benchmarks/`), but the summary: locust
 | Cache miss (EN, VADER) | 568 | 33ms | 60ms | 93ms |
 | Cache miss (PT, LeIA) | 458 | 41ms | 95ms | 140ms |
 
-**+71% throughput and -45% p50 latency** just from not recomputing what was already computed. Zero failures across every scenario. LeIA is ~20% slower than VADER (bigger lexicon + accent normalization), but it's far from a bottleneck.
++71% throughput and -45% p50 latency just from not recomputing what was already computed, zero failures across every scenario. LeIA is about 20% slower than VADER — bigger lexicon, accent normalization — but it's far from a bottleneck.
 
-## Lessons the tutorial doesn't tell you
+## What I'm taking from this one
 
-1. **PyPI sometimes lies.** Check what you install — the `leia` package there was an empty file. Vendoring small, stable code is a legitimate option.
-2. **Code coverage needs context.** The vendored code was dragging the metric down to 33%. Excluding `src/vendor` from coverage reported the right number: **98% coverage on the 412 lines that are actually mine**.
-3. **In-memory state has an owner.** With `WORKERS > 1`, each process gets its own cache and job store. For this use case (the cache is just an optimization, the job store is ephemeral) that's acceptable — but it's a conscious, documented decision, not an accident. If global consistency is ever needed, the next step is Redis.
-4. **`app.mount('/metrics')` in FastAPI returns a 307** for `/metrics` (redirecting to `/metrics/`). Prometheus doesn't follow redirects. The fix was to expose it as a regular route using `generate_latest()`.
-5. **Small, green commits.** Every feature was one commit with lint, types, and tests passing. The `git log` became the article's narrative.
+PyPI sometimes lies — checking what you install is part of the job, not paranoia; vendoring small, stable code is a legitimate option when the official package is broken. Code coverage also needs context: the vendored code was dragging the metric down to 33%, and excluding `src/vendor` from coverage revealed the real number — 98% on the 412 lines that are actually mine. In-memory state has an owner: with `WORKERS > 1`, each process gets its own cache and job store; for this use case that's acceptable, but it was a conscious, documented decision, not an accident — if global consistency is ever needed, the next step is Redis. And one FastAPI-specific gotcha: `app.mount('/metrics')` returns a 307 (redirecting to `/metrics/`), and Prometheus doesn't follow redirects — I fixed it by exposing it as a regular route with `generate_latest()`. Finally, every feature became its own commit with lint, types, and tests green before the next one — the `git log` ended up being the most honest narrative of this whole process.
 
-## Final state
+## Where the API stands now
 
-- 72 tests, 98% coverage, a 90% threshold gating CI
-- ruff (lint + format) and mypy clean, running on every push
-- CI across a Python matrix, Docker build validated on every push
-- Versioned, documented API with caching, batch, streaming, rate limiting, and metrics
-- Reproducible benchmark via `make benchmark`
+72 tests, 98% coverage, a 90% threshold gating CI. `ruff` (lint + format) and `mypy` clean on every push, CI across a Python matrix, Docker build validated on every push. Versioned, documented API with caching, batch, streaming, rate limiting, and metrics. Reproducible benchmark via `make benchmark`.

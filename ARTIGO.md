@@ -1,62 +1,39 @@
 🇧🇷 Português | [🇺🇸 English](ARTIGO.en-us.md)
 
-# De API de brinquedo a produção: evoluindo uma API de análise de sentimento
+# Levando a sério uma API que eu escrevi numa tarde
 
-Como uma API FastAPI de ~100 linhas virou um serviço com testes, CI, cache, multi-idioma, batch assíncrono, SSE e observabilidade — com números reais de benchmark no final.
+A primeira versão dessa API tinha uns 100 linhas, rodava VADER em cima de texto em inglês e era exatamente o que parece: um exercício. Decidi tratá-la como se fosse para produção mesmo, e isso mudou quase tudo — menos a ideia original.
 
-## O ponto de partida
+## O que eu tinha em mãos
 
-O projeto começou como a maioria dos projetos de estudo: uma API FastAPI que expunha o VADER (NLTK) para análise de sentimento, organizada em camadas (`routes` → `services` → `repositories`), com um Dockerfile e um pipeline que rodava `ruff` na `main`. Funcionava. E era isso.
+Uma API FastAPI expondo VADER (NLTK) para análise de sentimento, já organizada em camadas (`routes` → `services` → `repositories`), com Dockerfile e um pipeline que rodava `ruff` na `main`. Rodava. Só isso.
 
-O problema é que "funciona na minha máquina" não é um critério de engenharia. Faltava tudo o que separa um exemplo de tutorial de um serviço que você colocaria a assinatura embaixo:
+"Funciona na minha máquina" não é critério de engenharia, e eu sabia disso enquanto escrevia. Faltava tudo o que separa um exemplo de tutorial de algo que eu assinaria embaixo: zero testes automatizados, CI que só rodava depois do push pra `main` (ou seja, eu descobria que quebrei algo depois do merge), nenhum tratamento de erro — qualquer exceção vazava stack trace pro cliente —, `requirements.txt` sem pin de versão e com um bug entretido: uma linha `routes` listada como dependência do PyPI que quebrava `pip install` num ambiente limpo, e um Dockerfile com `COPY ../` (que nem funciona com contexto de build na raiz) rodando como root.
 
-- Zero testes automatizados
-- CI que só rodava em push para a `main`
-- Sem tratamento de erros (qualquer exceção vazava stack trace)
-- `requirements.txt` sem pin de versão — e com um bug: uma linha `routes` listada como dependência do PyPI quebrava `pip install` em ambiente limpo
-- Dockerfile com `COPY ../` (que nem funciona com contexto na raiz) e rodando como root
+## A regra que segui: nada de feature nova sem rede de proteção embaixo
 
-Este artigo é o caminho de lá até cá.
+Antes de mexer em qualquer coisa nova, construí a fundação.
 
-## Primeira parada: a base (testes, CI, Docker)
+A aplicação já tinha a separação `routes` → `services` → `repositories`, então os testes seguiram a mesma fronteira. No **repository** (`test_repository.py`), o VADER é determinístico, então testei textos claramente positivos, negativos e neutros checando o sinal dos scores (`compound`, `pos`, `neg`, `neu`) sem nenhum mock — quando a dependência é rápida e determinística, mockar é só ruído. No **service** (`test_service.py`), o repository é mockado porque o que importa ali é a lógica de negócio: classificação por thresholds (`> 0.05`, `< -0.05`), agregação de estatísticas, valores de fronteira. Nas **routes** (`test_routes.py`), os endpoints via `TestClient`, cobrindo sucesso e os erros 400 (texto ou lista vazia) e 422 (payload acima dos limites).
 
-Antes de qualquer feature nova, a fundação. A regra que segui: **nada de código novo sem rede de proteção embaixo.**
+O CI original só rodava na `main`; mudei para rodar em qualquer push e PR, com jobs paralelos — lint, format check, mypy e testes com cobertura mínima em matrix de Python 3.11/3.12.
 
-### Testes em três camadas
-
-A aplicação já tinha a separação `routes` → `services` → `repositories`, então os testes seguiram a mesma fronteira:
-
-- **Repository** (`test_repository.py`): o VADER é determinístico, então testei textos claramente positivos, negativos e neutros verificando os sinais dos scores (`compound`, `pos`, `neg`, `neu`) — sem mocks. Quando a dependência é rápida e determinística, mock é só ruído.
-- **Service** (`test_service.py`): aqui o repository é mockado, porque o que importa é a lógica de negócio — classificação por thresholds (`> 0.05`, `< -0.05`), agregação de estatísticas, fronteira de valores.
-- **Routes** (`test_routes.py`): os endpoints via `TestClient`, cobrindo sucesso e os erros 400 (texto/lista vazia) e 422 (payload acima dos limites).
-
-### CI que roda a cada commit
-
-O pipeline original só rodava na `main` — ou seja, você descobria que quebrou algo *depois* do merge. Ajustei para rodar em qualquer push e PR, com jobs paralelos: lint, format check, mypy e testes com cobertura mínima em matrix de Python 3.11/3.12.
-
-### Docker sem surpresas
-
-Dockerfile multi-stage com `python:3.12-slim`, usuário não-root e — detalhe importante — o **léxico do VADER pré-baixado no build**. Sem isso, o primeiro request em produção depende de um download em runtime. Cold start não deveria depender de rede.
+E o Docker ganhou multi-stage com `python:3.12-slim`, usuário não-root e um detalhe que eu quase deixei passar: o **léxico do VADER pré-baixado no build**.
 
 ```dockerfile
 ENV NLTK_DATA=/usr/local/share/nltk_data
 RUN python -c "import nltk; nltk.download('vader_lexicon', download_dir='/usr/local/share/nltk_data')"
 ```
 
-## A API em si: contrato primeiro
+Sem isso, o primeiro request em produção dependeria de um download em runtime — e cold start não deveria depender de rede.
 
-Com a base pronta, o próximo passo foi tratar a API como um **produto com contrato**, não como um script HTTP:
+## Tratando a API como contrato, não como script HTTP
 
-- **Versionamento** (`/v1/...`): dá para evoluir sem quebrar clientes.
-- **OpenAPI rica**: `response_model`, `summary`, `description`, exemplos e tags em todos os endpoints. Schemas de resposta tipados (`AnalyzeResponse`, `SentimentScores`) em vez de dicionários soltos — se o contrato está no tipo, o mypy e o `/docs` trabalham por você.
-- **Validação de payload**: `Field(max_length=10_000)` no texto e `max_length=100` na lista. Uma API pública sem limite de tamanho é um DoS de brinquedo esperando acontecer.
-- **`GET /`** com metadados e **`GET /health`** para liveness probes.
+Com a fundação de pé, o próximo passo foi parar de pensar nisso como "um endpoint que responde JSON" e começar a pensar como contrato: versionamento em `/v1/...` para poder evoluir sem quebrar quem já integrou; OpenAPI rica, com `response_model`, `summary`, `description`, exemplos e tags em cada endpoint; schemas de resposta tipados (`AnalyzeResponse`, `SentimentScores`) no lugar de dicionários soltos, porque se o contrato mora no tipo, o mypy e o `/docs` trabalham por mim; validação de payload (`Field(max_length=10_000)` no texto, `max_length=100` na lista) — uma API pública sem limite de tamanho é um DoS de brinquedo esperando acontecer; e `GET /` com metadados mais `GET /health` para liveness probe.
 
-## Features que valem um parágrafo cada
+## Decisões que valem um parágrafo cada
 
-### Multi-idioma: VADER para inglês, LeIA para português
-
-O VADER só entende inglês. Para PT-BR, usei o [LeIA](https://github.com/RafJaa/LeIA) — um fork do VADER adaptado para português. A integração é um dispatcher no repository:
+**Multi-idioma sem reescrever o pipeline.** VADER só entende inglês. Para PT-BR usei o [LeIA](https://github.com/RafJaa/LeIA), um fork do VADER adaptado para português, plugado como um dispatcher simples no repository:
 
 ```python
 ANALYZERS = {
@@ -71,11 +48,9 @@ def analyze_sentiment(text: str, language: str = 'en') -> dict[str, float]:
     return analyzer.polarity_scores(text)
 ```
 
-Curiosidade que rendeu capítulo de "lições aprendidas": o pacote `leia` publicado no PyPI é um **stub vazio** — o projeto real não tem empacotamento. Solução: vendorizei o módulo (arquivo único + léxicos) em `src/vendor/leia/`, excluindo a pasta de lint e mypy. Código de terceiros no meu controle de versão, imutável e auditável.
+O detalhe que virou nota de rodapé importante: o pacote `leia` publicado no PyPI é um **stub vazio** — o projeto real nunca foi empacotado direito. Resolvi vendorizando o módulo (arquivo único + léxicos) em `src/vendor/leia/`, excluído de lint e mypy. Código de terceiros sob meu próprio controle de versão, imutável e auditável, em vez de depender de um pacote quebrado no PyPI.
 
-### Cache: a feature mais barata e mais lucrativa
-
-Análise de sentimento é CPU-bound pura e **determinística**: mesmo texto, mesmo score, sempre. É o caso de uso perfeito de cache. Implementei um cache in-memory com TTL e eviction LRU, chaveado por `(language, text)`:
+**Cache, porque a carga é determinística.** Análise de sentimento aqui é CPU-bound pura e determinística — mesmo texto, mesmo score, sempre. É o caso de uso perfeito para cache. Implementei in-memory com TTL e eviction LRU, chaveado por `(language, text)`:
 
 ```python
 def analyze_sentiment(self, text: str, language: str = 'en') -> dict[str, float]:
@@ -89,29 +64,19 @@ def analyze_sentiment(self, text: str, language: str = 'en') -> dict[str, float]
     return result
 ```
 
-Carga com repetição de textos (reviews, redes sociais, monitoramento) tem taxa de acerto alta — e os números no final mostram o retorno.
+Cargas com texto repetido (reviews, redes sociais, monitoramento) têm taxa de acerto alta, e os números lá embaixo mostram o retorno disso.
 
-### Batch assíncrono com job ID
+**Batch sem segurar conexão.** `POST /v1/analyze_batch` responde `202 Accepted` com um job ID na hora; o processamento roda em background e o cliente consulta `GET /v1/results/{job_id}` até `completed` (ou `failed`).
 
-Lote grande não deveria segurar a conexão. `POST /v1/analyze_batch` responde `202 Accepted` com um job ID na hora; o processamento roda em background e o cliente consulta `GET /v1/results/{job_id}` até `completed` (ou `failed`).
+**Streaming sem WebSocket.** Para quem quer resultado progressivo, `POST /v1/analyze_stream` responde com Server-Sent Events — um evento `data` por texto analisado, terminando com `event: done`. Funciona com um `curl -N` puro.
 
-### Streaming com SSE
+## Sem visibilidade eu não conserto nada
 
-Para quem quer resultado progressivo, `POST /v1/analyze_stream` responde com Server-Sent Events: um evento `data` por texto analisado, terminando com `event: done`. Simples, funciona com um `curl -N` e não precisa de WebSocket.
+`GET /metrics` em formato Prometheus, com contadores de HTTP por método/rota/status, histograma de latência, distribuição de sentimentos por idioma, hits/misses do cache e jobs por status. Structured logging (`structlog`) em JSON, com `request_id` por request — gerado ou propagado via `X-Request-ID` — porque quando algo quebra eu quero filtrar por um ID e ver a linha exata, não caçar em texto solto. Header `X-Process-Time-Ms` em toda resposta. Sentry opcional, ligado só setando `SENTRY_DSN`. Rate limiting por IP (429 + `Retry-After`) e headers de segurança. Tudo configurável via variáveis de ambiente com `pydantic-settings`, e um `make dev` que sobe com reload pro dia a dia.
 
-## Observabilidade: você não pode consertar o que não vê
+## Os números
 
-- **`GET /metrics` em formato Prometheus**: contadores de HTTP por método/rota/status, histograma de latência, distribuição de sentimentos por idioma, hits/misses do cache, jobs por status.
-- **Structured logging (structlog)** em JSON, com `request_id` gerado por request (ou propagado do cliente via `X-Request-ID`). Quando algo quebra, você filtra por um ID e vê a linha exata.
-- **Header `X-Process-Time-Ms`** em toda resposta.
-- **Sentry opcional** — seta `SENTRY_DSN` e pronto, sem tocar em código.
-- **Rate limiting** por IP (429 + `Retry-After`) e headers de segurança.
-
-Tudo configurável por variáveis de ambiente via `pydantic-settings`, com um `make dev` que sobe com reload para o dia a dia.
-
-## Os números (a parte que interessa)
-
-Metodologia completa no repositório (`docs/benchmarks/`), mas o resumo: locust, 20 usuários virtuais, 30s por cenário, 1 worker, texts curtos:
+Metodologia completa em `docs/benchmarks/`; o resumo é locust com 20 usuários virtuais, 30s por cenário, 1 worker, textos curtos:
 
 | Cenário | req/s | p50 | p95 | p99 |
 | --- | --- | --- | --- | --- |
@@ -119,20 +84,12 @@ Metodologia completa no repositório (`docs/benchmarks/`), mas o resumo: locust,
 | Cache miss (EN, VADER) | 568 | 33ms | 60ms | 93ms |
 | Cache miss (PT, LeIA) | 458 | 41ms | 95ms | 140ms |
 
-**+71% de vazão e -45% de latência no p50** só por não recalcular o que já foi calculado. Zero falhas em todos os cenários. O LeIA é ~20% mais lento que o VADER (léxico maior + normalização de acentuação), mas está longe de ser gargalo.
++71% de vazão e -45% de latência no p50 só por não recalcular o que já foi calculado, zero falhas em todos os cenários. O LeIA é cerca de 20% mais lento que o VADER — léxico maior, normalização de acentuação — mas está longe de ser gargalo.
 
-## Lições que o tutorial não conta
+## O que eu levo daqui
 
-1. **O PyPI mente às vezes.** Verifique o que você instala — o `leia` de lá era um arquivo vazio. Vendorizar código pequeno e estável é opção legítima.
-2. **Cobertura de código precisa de contexto.** O código vendored derrubava a métrica para 33%. Excluir `src/vendor` do coverage reportou o número certo: **98% de cobertura nas 412 linhas que são minhas**.
-3. **Estado in-memory tem dono.** Com `WORKERS > 1`, cada processo tem seu cache e job store. Para este caso (cache é só otimização, job store é efêmero) é aceitável — mas é uma decisão consciente, documentada, não um acidente. Se precisar de consistência global, o próximo passo é Redis.
-4. **`app.mount('/metrics')` no FastAPI responde 307** para `/metrics` (redirect para `/metrics/`). O Prometheus não segue redirect. A solução foi expor como rota normal com `generate_latest()`.
-5. **Commits pequenos e verdes.** Cada feature foi um commit com lint, types e testes passando. O `git log` virou a narrativa do artigo.
+O PyPI mente às vezes — verificar o que se instala é parte do trabalho, não paranoia; vendorizar código pequeno e estável é uma opção legítima quando o pacote oficial está quebrado. Cobertura de código também precisa de contexto: o código vendored derrubava a métrica pra 33%, e só excluir `src/vendor` do coverage revelou o número real — 98% nas 412 linhas que são efetivamente minhas. Estado in-memory tem dono: com `WORKERS > 1`, cada processo tem seu próprio cache e job store; pra este caso isso é aceitável, mas foi uma decisão consciente e documentada, não um acidente — se algum dia precisar de consistência global, o próximo passo é Redis. E uma pegadinha específica do FastAPI: `app.mount('/metrics')` responde 307 (redirect para `/metrics/`) e o Prometheus não segue redirect — resolvi expondo como rota normal com `generate_latest()`. Por fim, cada feature virou um commit isolado com lint, types e testes passando antes do próximo — o `git log` acabou sendo a narrativa mais honesta desse processo todo.
 
-## Estado final
+## Onde a API está agora
 
-- 72 testes, 98% de cobertura, threshold de 90% bloqueando no CI
-- ruff (lint + format) e mypy limpos, rodando a cada push
-- CI em matrix de Python, build de Docker validada em todo push
-- API versionada, documentada, com cache, batch, stream, rate limit e métricas
-- Benchmark reproduzível com `make benchmark`
+72 testes, 98% de cobertura, threshold de 90% bloqueando no CI. `ruff` (lint + format) e `mypy` limpos a cada push, CI em matrix de Python, build de Docker validada em todo push. API versionada e documentada, com cache, batch, streaming, rate limit e métricas. Benchmark reproduzível com `make benchmark`.
