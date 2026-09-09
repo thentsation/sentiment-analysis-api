@@ -7,6 +7,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   OCI_REGION: sa-saopaulo-1
   OCI_NAMESPACE: grun5vjqis7z
@@ -121,6 +125,9 @@ jobs:
 
           ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/oci_key.pem ubuntu@"$PUBLIC_IP" bash -s <<EOF
             set -e
+            exec 200>/tmp/oci-deploy.lock
+            echo "Aguardando lock de deploy (evita conflito com deploy de outra app na mesma instância)..."
+            flock -w 600 200 || { echo "Timeout aguardando lock de deploy"; exit 1; }
             echo "${{ secrets.OCI_AUTH_TOKEN }}" | docker login gru.ocir.io -u "$OCI_NAMESPACE/ci-deploy" --password-stdin
             docker pull "$OCIR_URI:$IMAGE_TAG"
             docker stop "$CONTAINER_NAME" || true
