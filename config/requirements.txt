@@ -1,5 +1,5 @@
 fastapi==0.141.1
-uvicorn==0.52.4
+uvicorn==0.53.0
 nltk==3.10.3
 pydantic-settings==2.15.0
 prometheus-client==0.26.0
