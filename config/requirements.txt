@@ -6,4 +6,4 @@ prometheus-client==0.26.0
 structlog==26.1.0
 sentry-sdk[fastapi]==2.69.2
 msgpack==1.2.2
-psycopg[binary]==3.3.5
+psycopg[binary]==3.3.6
