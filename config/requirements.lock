@@ -34,9 +34,9 @@ nltk==3.10.3
     # via -r config/requirements.txt
 prometheus-client==0.26.0
     # via -r config/requirements.txt
-psycopg==3.3.5
+psycopg==3.3.6
     # via -r config/requirements.txt
-psycopg-binary==3.3.5 ; implementation_name != 'pypy'
+psycopg-binary==3.3.6 ; implementation_name != 'pypy'
     # via psycopg
 pydantic==2.13.4
     # via
@@ -50,7 +50,7 @@ python-dotenv==1.2.3
     # via pydantic-settings
 regex==2026.7.19
     # via nltk
-sentry-sdk==2.69.1
+sentry-sdk==2.70.0
     # via -r config/requirements.txt
 starlette==1.6.0
     # via fastapi
@@ -76,5 +76,5 @@ tzdata==2026.3 ; sys_platform == 'win32'
     # via psycopg
 urllib3==2.7.0
     # via sentry-sdk
-uvicorn==0.53.0
+uvicorn==0.54.0
     # via -r config/requirements.txt
