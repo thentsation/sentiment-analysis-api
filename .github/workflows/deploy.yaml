@@ -195,14 +195,18 @@ jobs:
           CURRENT_DIGEST=$(docker buildx imagetools inspect "$OCIR_URI:$IMAGE_TAG" --format '{{.Manifest.Digest}}')
           [[ "$CURRENT_DIGEST" == sha256:* ]] || { echo "Digest da tag $IMAGE_TAG inválido: '$CURRENT_DIGEST'"; exit 1; }
 
-          # Imagem com tag mais recente cujo digest não é o atual (duas tags no mesmo digest contam como uma imagem)
+          # Imagem com tag mais recente, anterior à atual e com outro digest (duas tags no mesmo digest contam como uma imagem)
           PREVIOUS_DIGEST=$(CURRENT_DIGEST="$CURRENT_DIGEST" python3 -c "
           import json, os
           items = json.load(open('/tmp/ocir-images.json'))['data']['items']
           current = os.environ['CURRENT_DIGEST']
           if not any(i['digest'] == current for i in items):
               raise SystemExit(f'Digest atual {current} não aparece na listagem do repositório; abortando por segurança')
-          tagged = [i for i in items if i.get('version') and i['digest'] != current and i['lifecycle-state'] == 'AVAILABLE']
+          current_time = min(i['time-created'] for i in items if i['digest'] == current)
+          tagged = [
+              i for i in items
+              if i.get('version') and i['digest'] != current and i['lifecycle-state'] == 'AVAILABLE' and i['time-created'] < current_time
+          ]
           tagged.sort(key=lambda i: i['time-created'], reverse=True)
           print(tagged[0]['digest'] if tagged else '')
           ")
@@ -218,14 +222,21 @@ jobs:
           echo "Mantendo $(wc -l < /tmp/ocir-keep.txt) digests (atual: $CURRENT_DIGEST, anterior: ${PREVIOUS_DIGEST:-nenhuma}):"
           cat /tmp/ocir-keep.txt
 
-          # Tagueadas (indexes) primeiro, para os filhos não ficarem presos a um index ainda existente
-          python3 -c "
-          import json
+          # Só apaga o que é mais antigo que a imagem atual (uma publicada no meio, por outro
+          # dispatch ou push manual, fica). Tagueadas (indexes) primeiro, para os filhos não
+          # ficarem presos a um index ainda existente. Uma imagem com várias tags aparece
+          # várias vezes na listagem com o mesmo OCID: deduplica mantendo a ordem.
+          CURRENT_DIGEST="$CURRENT_DIGEST" python3 -c "
+          import json, os
           keep = set(open('/tmp/ocir-keep.txt').read().split())
           items = json.load(open('/tmp/ocir-images.json'))['data']['items']
-          old = [i for i in items if i['digest'] not in keep and i['lifecycle-state'] == 'AVAILABLE']
+          current_time = min(i['time-created'] for i in items if i['digest'] == os.environ['CURRENT_DIGEST'])
+          old = [
+              i for i in items
+              if i['digest'] not in keep and i['lifecycle-state'] == 'AVAILABLE' and i['time-created'] < current_time
+          ]
           old.sort(key=lambda i: not i.get('version'))
-          print('\n'.join(i['id'] for i in old))
+          print('\n'.join(dict.fromkeys(i['id'] for i in old)))
           " > /tmp/ocir-delete.txt
 
           TOTAL=$(grep -c . /tmp/ocir-delete.txt || true)
