@@ -10,7 +10,7 @@ on:
       - '**.md'
       - 'docs/**'
   schedule:
-    - cron: "0 11 * * *" # 08:00 BRT (UTC-3)
+    - cron: "0 11 * * 1" # segunda 08:00 BRT (UTC-3); semanal: dispara Docker CI → push GHCR → Deploy, não refazer a imagem todo dia
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
