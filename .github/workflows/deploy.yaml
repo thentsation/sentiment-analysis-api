@@ -170,3 +170,80 @@ jobs:
           done
           echo "Smoke test falhou: /health não respondeu 200 a tempo"
           exit 1
+
+      - name: Limpar imagens antigas no OCIR
+        # Mantém a imagem recém-publicada ($IMAGE_TAG) e a anterior com tag (rollback),
+        # cada uma com seus manifests filhos (amd64, arm64, attestations). Apaga o resto
+        # do repositório para não passar do limite grátis. Compara por digest, não por
+        # OCID. Se falhar, só gera aviso: o deploy já deu certo e não é derrubado.
+        continue-on-error: true
+        timeout-minutes: 30
+        run: |
+          set -euo pipefail
+          trap 'echo "::warning::Limpeza do OCIR falhou (linha $LINENO). O deploy não foi afetado; imagens antigas ficaram no repositório $OCIR_REPOSITORY."' ERR
+
+          oci artifacts container image list \
+            --compartment-id "$OCI_COMPARTMENT_ID" \
+            --repository-name "$OCIR_REPOSITORY" \
+            --all > /tmp/ocir-images.json
+
+          children() {
+            docker buildx imagetools inspect --raw "$1" \
+              | python3 -c "import json, sys; print('\n'.join(m['digest'] for m in json.load(sys.stdin).get('manifests', [])))"
+          }
+
+          CURRENT_DIGEST=$(docker buildx imagetools inspect "$OCIR_URI:$IMAGE_TAG" --format '{{.Manifest.Digest}}')
+          [[ "$CURRENT_DIGEST" == sha256:* ]] || { echo "Digest da tag $IMAGE_TAG inválido: '$CURRENT_DIGEST'"; exit 1; }
+
+          # Imagem com tag mais recente cujo digest não é o atual (duas tags no mesmo digest contam como uma imagem)
+          PREVIOUS_DIGEST=$(CURRENT_DIGEST="$CURRENT_DIGEST" python3 -c "
+          import json, os
+          items = json.load(open('/tmp/ocir-images.json'))['data']['items']
+          current = os.environ['CURRENT_DIGEST']
+          if not any(i['digest'] == current for i in items):
+              raise SystemExit(f'Digest atual {current} não aparece na listagem do repositório; abortando por segurança')
+          tagged = [i for i in items if i.get('version') and i['digest'] != current and i['lifecycle-state'] == 'AVAILABLE']
+          tagged.sort(key=lambda i: i['time-created'], reverse=True)
+          print(tagged[0]['digest'] if tagged else '')
+          ")
+
+          {
+            echo "$CURRENT_DIGEST"
+            children "$OCIR_URI@$CURRENT_DIGEST"
+            if [ -n "$PREVIOUS_DIGEST" ]; then
+              echo "$PREVIOUS_DIGEST"
+              children "$OCIR_URI@$PREVIOUS_DIGEST"
+            fi
+          } | sort -u > /tmp/ocir-keep.txt
+          echo "Mantendo $(wc -l < /tmp/ocir-keep.txt) digests (atual: $CURRENT_DIGEST, anterior: ${PREVIOUS_DIGEST:-nenhuma}):"
+          cat /tmp/ocir-keep.txt
+
+          # Tagueadas (indexes) primeiro, para os filhos não ficarem presos a um index ainda existente
+          python3 -c "
+          import json
+          keep = set(open('/tmp/ocir-keep.txt').read().split())
+          items = json.load(open('/tmp/ocir-images.json'))['data']['items']
+          old = [i for i in items if i['digest'] not in keep and i['lifecycle-state'] == 'AVAILABLE']
+          old.sort(key=lambda i: not i.get('version'))
+          print('\n'.join(i['id'] for i in old))
+          " > /tmp/ocir-delete.txt
+
+          TOTAL=$(grep -c . /tmp/ocir-delete.txt || true)
+          echo "Apagando $TOTAL imagens antigas de $(python3 -c "import json; print(len(json.load(open('/tmp/ocir-images.json'))['data']['items']))") no repositório $OCIR_REPOSITORY"
+          : > /tmp/ocir-failed.txt
+          while read -r IMAGE_ID; do
+            [ -n "$IMAGE_ID" ] || continue
+            oci artifacts container image delete --image-id "$IMAGE_ID" --force > /dev/null 2>&1 \
+              || echo "$IMAGE_ID" >> /tmp/ocir-failed.txt
+          done < /tmp/ocir-delete.txt
+
+          # Segunda passada: um filho pode ter falhado por ainda estar referenciado por um index já apagado
+          FAILED=0
+          while read -r IMAGE_ID; do
+            [ -n "$IMAGE_ID" ] || continue
+            oci artifacts container image delete --image-id "$IMAGE_ID" --force > /dev/null \
+              || { echo "::warning::Não consegui apagar $IMAGE_ID"; FAILED=$((FAILED + 1)); }
+          done < /tmp/ocir-failed.txt
+
+          echo "Limpeza do OCIR: $((TOTAL - FAILED)) de $TOTAL apagadas, $FAILED falharam"
+          [ "$FAILED" -eq 0 ]
