@@ -8,8 +8,6 @@ on:
     paths-ignore:
       - '**.md'
       - 'docs/**'
-  schedule:
-    - cron: "0 11 * * 1" # segunda 08:00 BRT (UTC-3); só build + Trivy, não publica (quem publica é o Python CI via workflow_run)
   release:
     types: [published]
 
