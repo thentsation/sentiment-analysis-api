@@ -220,9 +220,17 @@ A documentação interativa está disponível em `/docs` (Swagger) e `/redoc`.
 
 ## CI/CD
 
-- **pipeline_python.yaml** — a cada push/PR: `ruff check`, `ruff format --check`,
-  `pytest` com cobertura (Python 3.11 e 3.12) e `mypy`.
-- **pipeline_docker.yaml** — a cada push/PR: constrói a imagem Docker.
+CI e deploy rodam no Jenkins (`Jenkinsfile`), disparados por webhooks do GitHub:
+
+- **PRs e branches** — validação do compose e do Dockerfile; `docker build --target test`
+  (`ruff check`, `ruff format --check`, `mypy`, `pytest` com cobertura ≥90% em
+  Python 3.11 e 3.12); `pip-audit` no `config/requirements.lock`; Trivy
+  (CRITICAL/HIGH) na imagem de runtime.
+- **main** — tudo acima e depois build, smoke test, push para o OCIR e deploy
+  atrás do Traefik com rollback automático. Também é reconstruída toda segunda
+  para pegar patches de segurança.
+- **publish_ghcr.yaml** (GitHub Actions) — publica a imagem multi-arch no GHCR
+  em pushes na `main` e em releases.
 
 ## Estrutura do projeto
 
