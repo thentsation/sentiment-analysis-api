@@ -7,15 +7,17 @@ COPY config/requirements.lock ./config/
 RUN pip install --no-cache-dir --prefix=/install -r ./config/requirements.lock
 
 # CI (o Jenkins roda docker build --target test): ruff, mypy e pytest com cobertura
-# mínima de 90% em Python 3.11 e 3.12. pip-audit e Trivy ficam no Jenkinsfile, fora do
+# mínima de 90% em Python 3.11 e 3.12, nas versões fixadas em config/requirements-dev.txt
+# (atualizadas pelo Renovate). pip-audit e Trivy rodam no pipeline da plataforma, fora do
 # cache de build, porque o resultado muda com as bases de vulnerabilidades.
 FROM python:3.12-slim AS lint
 
 WORKDIR /app
 
-COPY config/requirements.txt ./config/
+COPY config/requirements.txt config/requirements-dev.txt ./config/
 
-RUN pip install --no-cache-dir -r ./config/requirements.txt ruff==0.16.3 mypy==2.3.1
+RUN pip install --no-cache-dir -r ./config/requirements.txt \
+    $(grep -E '^(ruff|mypy)==' ./config/requirements-dev.txt)
 
 COPY . .
 
@@ -25,9 +27,10 @@ FROM python:3.11-slim AS pytest-py311
 
 WORKDIR /app
 
-COPY config/requirements.txt ./config/
+COPY config/requirements.txt config/requirements-dev.txt ./config/
 
-RUN pip install --no-cache-dir -r ./config/requirements.txt pytest==9.1.1 pytest-cov==7.1.0 httpx==0.28.1
+RUN pip install --no-cache-dir -r ./config/requirements.txt \
+    $(grep -E '^(pytest|pytest-cov|httpx)==' ./config/requirements-dev.txt)
 
 COPY . .
 
@@ -37,9 +40,10 @@ FROM python:3.12-slim AS pytest-py312
 
 WORKDIR /app
 
-COPY config/requirements.txt ./config/
+COPY config/requirements.txt config/requirements-dev.txt ./config/
 
-RUN pip install --no-cache-dir -r ./config/requirements.txt pytest==9.1.1 pytest-cov==7.1.0 httpx==0.28.1
+RUN pip install --no-cache-dir -r ./config/requirements.txt \
+    $(grep -E '^(pytest|pytest-cov|httpx)==' ./config/requirements-dev.txt)
 
 COPY . .
 
