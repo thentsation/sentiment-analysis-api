@@ -70,6 +70,12 @@ pipeline {
         skipDefaultCheckout()
     }
 
+    // Rebuild semanal da branch de deploy (segunda, ~08:00 BRT) para pegar patches do
+    // sistema e das dependências mesmo sem commit novo.
+    triggers {
+        cron(env.BRANCH_NAME == 'main' ? 'H 11 * * 1' : '')
+    }
+
 
     // Único trecho preenchido pelo cookiecutter. As variáveis globais do Jenkins
     // (REGISTRY, OCIR_NAMESPACE, PROXY_NETWORK, APPS_ROOT, TRAEFIK_ENDPOINT) têm precedência.
@@ -151,6 +157,46 @@ pipeline {
                         echo "AVISO: docker/Dockerfile não tem o stage 'test'; CI sem lint e testes (repo legado)."
                     fi
                 '''
+            }
+        }
+
+        // Fora do cache do docker build: o resultado muda com as bases de vulnerabilidades.
+        stage('Segurança') {
+            parallel {
+                stage('pip-audit') {
+                    steps {
+                        // GHSA-8mgp-746c-j5xp: path-sandbox bypass nas APIs de modelo do nltk
+                        // (TransitionParser, AveragedPerceptron, PerceptronTagger), que o app não
+                        // usa (só download()/data.find()/vader); ainda sem correção publicada.
+                        sh label: 'pip-audit do requirements.lock', script: '''
+                            set -eu
+                            docker run --rm -i python:3.12-slim sh -c '
+                                pip install -q --no-cache-dir --root-user-action=ignore pip-audit==2.7.3 &&
+                                cat > /tmp/requirements.lock &&
+                                pip-audit -r /tmp/requirements.lock --ignore-vuln GHSA-8mgp-746c-j5xp
+                            ' < config/requirements.lock
+                        '''
+                    }
+                }
+
+                stage('Trivy') {
+                    steps {
+                        sh label: 'Trivy na imagem de runtime', script: '''
+                            set -eu
+                            # Sem cache no stage runtime: o apt-get upgrade precisa rodar de novo para
+                            # pegar os patches do sistema. O Build da entrega reaproveita estas camadas.
+                            docker build --pull --no-cache-filter runtime --target runtime \
+                                -t "$CI_ID-scan" -f docker/Dockerfile .
+                            docker run --rm \
+                                -v /var/run/docker.sock:/var/run/docker.sock \
+                                -v trivy-cache:/root/.cache/trivy \
+                                aquasec/trivy:0.75.0 image \
+                                --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 \
+                                --skip-dirs usr/local/lib/python3.14/site-packages/pip/_vendor \
+                                "$CI_ID-scan"
+                        '''
+                    }
+                }
             }
         }
 
@@ -328,7 +374,7 @@ pipeline {
                         set -eu
                         docker rm -f "$CI_ID-smoke" >/dev/null 2>&1 || true
                         docker network rm "$CI_ID-net" >/dev/null 2>&1 || true
-                        docker image rm "$CI_ID-test" >/dev/null 2>&1 || true
+                        docker image rm "$CI_ID-test" "$CI_ID-scan" >/dev/null 2>&1 || true
                         rm -rf "$DOCKER_CONFIG_DIR" "$WORKSPACE/.ci-health-body"
                     '''
                 }
