@@ -6,7 +6,7 @@ COPY config/requirements.lock ./config/
 
 RUN pip install --no-cache-dir --prefix=/install -r ./config/requirements.lock
 
-FROM python:3.14-slim
+FROM python:3.14-slim AS runtime
 
 WORKDIR /app
 
@@ -29,3 +29,6 @@ COPY src ./src
 EXPOSE 8000
 
 CMD ["python", "src/main.py"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
