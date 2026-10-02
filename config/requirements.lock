@@ -18,7 +18,7 @@ colorama==0.4.6 ; sys_platform == 'win32'
     #   tqdm
 defusedxml==0.7.1
     # via nltk
-fastapi==0.141.1
+fastapi==0.142.2
     # via
     #   -r config/requirements.txt
     #   sentry-sdk
@@ -32,6 +32,8 @@ msgpack==1.2.3
     # via -r config/requirements.txt
 nltk==3.10.3
     # via -r config/requirements.txt
+opentelemetry-api==1.45.0
+    # via fastapi
 prometheus-client==0.26.0
     # via -r config/requirements.txt
 psycopg==3.3.6
@@ -61,6 +63,7 @@ tqdm==4.70.0
 typing-extensions==4.16.0
     # via
     #   fastapi
+    #   opentelemetry-api
     #   pydantic
     #   pydantic-core
     #   typing-inspection
