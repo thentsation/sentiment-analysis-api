@@ -5,5 +5,5 @@ pydantic-settings==2.15.0
 prometheus-client==0.26.0
 structlog==26.1.0
 sentry-sdk[fastapi]==2.70.0
-msgpack==1.2.2
+msgpack==1.2.3
 psycopg[binary]==3.3.6
