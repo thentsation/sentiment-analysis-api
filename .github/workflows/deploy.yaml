@@ -19,6 +19,9 @@ env:
   OCIR_REPOSITORY: sentiment-analysis-api
   GHCR_IMAGE: ghcr.io/thentsation/sentiment-analysis-api
   CONTAINER_NAME: sentiment-analysis-api
+  APP_HOST: sentiment.137-131-175-7.sslip.io
+  APP_PORT: 8000
+  HEALTH_PATH: /health
 
 jobs:
   deploy:
@@ -130,9 +133,28 @@ jobs:
             flock -w 600 200 || { echo "Timeout aguardando lock de deploy"; exit 1; }
             echo "${{ secrets.OCI_AUTH_TOKEN }}" | docker login gru.ocir.io -u "$OCI_NAMESPACE/ci-deploy" --password-stdin
             docker pull "$OCIR_URI:$IMAGE_TAG"
+            docker network inspect proxy >/dev/null
             docker stop "$CONTAINER_NAME" || true
-            docker rm "$CONTAINER_NAME" || true
-            docker run -d --name "$CONTAINER_NAME" --restart unless-stopped -p 80:8000 "$OCIR_URI:$IMAGE_TAG"
+            docker rm -f "$CONTAINER_NAME-old" || true
+            docker rename "$CONTAINER_NAME" "$CONTAINER_NAME-old" || true
+            if ! docker run -d --name "$CONTAINER_NAME" --restart unless-stopped \
+              --network proxy \
+              --health-cmd "python -c \"import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:$APP_PORT$HEALTH_PATH', timeout=4).status == 200 else 1)\"" \
+              --health-interval 15s --health-retries 3 --health-start-period 20s \
+              --label traefik.enable=true \
+              --label traefik.docker.network=proxy \
+              --label "traefik.http.routers.$CONTAINER_NAME.rule=Host(\\\`$APP_HOST\\\`)" \
+              --label traefik.http.routers.$CONTAINER_NAME.entrypoints=websecure \
+              --label traefik.http.routers.$CONTAINER_NAME.tls.certresolver=letsencrypt \
+              --label traefik.http.services.$CONTAINER_NAME.loadbalancer.server.port=$APP_PORT \
+              "$OCIR_URI:$IMAGE_TAG"; then
+              echo "Falha ao subir a nova versão, restaurando a anterior"
+              docker rm -f "$CONTAINER_NAME" || true
+              docker rename "$CONTAINER_NAME-old" "$CONTAINER_NAME" || true
+              docker start "$CONTAINER_NAME" || true
+              exit 1
+            fi
+            docker rm -f "$CONTAINER_NAME-old" || true
             docker image prune -f
             docker images "$OCIR_URI" --format '{{.Tag}}' | grep -xv "$IMAGE_TAG" | xargs -r -I{} docker rmi "$OCIR_URI:{}" || true
           EOF
@@ -159,7 +181,7 @@ jobs:
       - name: Smoke test (/health)
         run: |
           for i in $(seq 1 10); do
-            CODE=$(curl -s -o /tmp/health.json -w '%{http_code}' "http://$PUBLIC_IP/health" || echo "000")
+            CODE=$(curl -s -o /tmp/health.json -w '%{http_code}' "https://$APP_HOST$HEALTH_PATH" || echo "000")
             if [ "$CODE" = "200" ]; then
               echo "OK: /health respondeu 200"
               cat /tmp/health.json
