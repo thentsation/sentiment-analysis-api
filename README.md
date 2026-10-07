@@ -219,11 +219,17 @@ Interactive documentation is available at `/docs` (Swagger) and `/redoc`.
 
 ## CI/CD
 
-CI and deploy run on the platform's Jenkins (`Jenkinsfile` → `appPipeline` from the `platform` Shared Library, repo devops-platform), triggered by webhooks. No GitHub Actions.
+CI and deploy run on Jenkins (`Jenkinsfile`), triggered by GitHub webhooks:
 
-- **PRs and branches** — contract validation; `docker build --target test` (`ruff check`, `ruff format --check`, `mypy`, `pytest` with ≥90% coverage on Python 3.11 and 3.12, tool versions from `config/requirements-dev.txt`); `pip-audit` on `config/requirements.lock`; Trivy (CRITICAL/HIGH) on the runtime image.
-- **main** — all of the above, then build, smoke test, push to OCIR, deploy behind Traefik with automatic rollback, release with python-semantic-release (version, CHANGELOG, tag and GitHub release) and a rebuild of the portfolio. Also rebuilt every Monday to pick up security patches.
-- **Dependencies** — Renovate (Jenkins job `platform/renovate`, `renovate.json` → devops-platform preset): daily updates, weekly lockfile maintenance, Dependency Dashboard issue and auto-merge of patch/minor after Jenkins passes.
+- **PRs and branches** — compose/Dockerfile validation; `docker build --target test`
+  (`ruff check`, `ruff format --check`, `mypy`, `pytest` with ≥90% coverage on
+  Python 3.11 and 3.12); `pip-audit` on `config/requirements.lock`; Trivy
+  (CRITICAL/HIGH) on the runtime image.
+- **main** — all of the above, then build, smoke test, push to OCIR and deploy
+  behind Traefik with automatic rollback. Also rebuilt every Monday to pick up
+  security patches.
+- **publish_ghcr.yaml** (GitHub Actions) — publishes the multi-arch image to GHCR
+  on pushes to `main` and on releases.
 
 ## Project structure
 
