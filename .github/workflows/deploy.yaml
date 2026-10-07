@@ -1,0 +1,260 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["Docker CI/CD"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  OCI_REGION: sa-saopaulo-1
+  OCI_NAMESPACE: grun5vjqis7z
+  OCI_COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }}
+  OCI_SECURITY_LIST_ID: ${{ secrets.OCI_SECURITY_LIST_ID }}
+  OCIR_REPOSITORY: sentiment-analysis-api
+  GHCR_IMAGE: ghcr.io/thentsation/sentiment-analysis-api
+  CONTAINER_NAME: sentiment-analysis-api
+
+jobs:
+  deploy:
+    name: Deploy na instância Oracle
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Instalar OCI CLI
+        run: pip install --quiet oci-cli
+
+      - name: Configurar OCI CLI
+        run: |
+          mkdir -p ~/.oci
+          printf '%s' "${{ secrets.OCI_CI_PRIVATE_KEY }}" > ~/.oci/key.pem
+          chmod 600 ~/.oci/key.pem
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_CI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_CI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=$OCI_REGION
+          key_file=~/.oci/key.pem
+          EOF
+          chmod 600 ~/.oci/config
+          echo "OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING=True" >> "$GITHUB_ENV"
+
+      - name: Login no OCIR
+        run: echo "${{ secrets.OCI_AUTH_TOKEN }}" | docker login gru.ocir.io -u "$OCI_NAMESPACE/ci-deploy" --password-stdin
+
+      - name: Login no GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Espelhar imagem do GHCR para o OCIR
+        run: |
+          OCIR_URI="gru.ocir.io/$OCI_NAMESPACE/$OCIR_REPOSITORY"
+          IMAGE_TAG="${GITHUB_SHA::12}"
+          docker buildx imagetools create \
+            --tag "$OCIR_URI:$IMAGE_TAG" \
+            "$GHCR_IMAGE:latest"
+          echo "OCIR_URI=$OCIR_URI" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
+
+      - name: Achar a instância Oracle
+        run: |
+          INSTANCE_ID=$(oci compute instance list \
+            --compartment-id "$OCI_COMPARTMENT_ID" \
+            --display-name "instance-20260824-0846" \
+            --lifecycle-state RUNNING \
+            --query 'data[0].id' --raw-output)
+          [ "$INSTANCE_ID" != "null" ] || { echo "Instância não encontrada ou não está running"; exit 1; }
+          PUBLIC_IP=$(oci compute instance list-vnics --instance-id "$INSTANCE_ID" --query 'data[0]."public-ip"' --raw-output)
+          echo "INSTANCE_ID=$INSTANCE_ID" >> "$GITHUB_ENV"
+          echo "PUBLIC_IP=$PUBLIC_IP" >> "$GITHUB_ENV"
+
+      - name: Liberar IP do runner na porta 22
+        run: |
+          RUNNER_IP=$(curl -s https://checkip.amazonaws.com)
+          echo "RUNNER_IP=$RUNNER_IP" >> "$GITHUB_ENV"
+
+          for attempt in $(seq 1 8); do
+            oci network security-list get --security-list-id "$OCI_SECURITY_LIST_ID" > /tmp/sl.json
+            ETAG=$(python3 -c "import json; print(json.load(open('/tmp/sl.json'))['etag'])")
+
+            python3 -c "
+          import json
+          sl = json.load(open('/tmp/sl.json'))
+          rules = sl['data']['ingress-security-rules']
+          rules.append({
+              'description': 'CI runner (temporario)',
+              'icmp-options': None,
+              'is-stateless': False,
+              'protocol': '6',
+              'source': '$RUNNER_IP/32',
+              'source-type': 'CIDR_BLOCK',
+              'tcp-options': {'destination-port-range': {'min': 22, 'max': 22}, 'source-port-range': None},
+              'udp-options': None
+          })
+          json.dump(rules, open('/tmp/new-rules.json', 'w'))
+          "
+            oci network security-list update --security-list-id "$OCI_SECURITY_LIST_ID" \
+              --ingress-security-rules file:///tmp/new-rules.json --if-match "$ETAG" --force && break
+            echo "Conflito de concorrência ao liberar IP (tentativa $attempt), tentando de novo..."
+            sleep $(( (RANDOM % 5) + 1 ))
+          done
+
+      - name: Deploy via SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.OCI_SSH_PRIVATE_KEY }}" > ~/.ssh/oci_key.pem
+          chmod 600 ~/.ssh/oci_key.pem
+
+          for i in $(seq 1 10); do
+            ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -i ~/.ssh/oci_key.pem ubuntu@"$PUBLIC_IP" "echo ok" && break
+            echo "Tentativa $i de conectar via SSH..."
+            sleep 5
+          done
+
+          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/oci_key.pem ubuntu@"$PUBLIC_IP" bash -s <<EOF
+            set -e
+            exec 200>/tmp/oci-deploy.lock
+            echo "Aguardando lock de deploy (evita conflito com deploy de outra app na mesma instância)..."
+            flock -w 600 200 || { echo "Timeout aguardando lock de deploy"; exit 1; }
+            echo "${{ secrets.OCI_AUTH_TOKEN }}" | docker login gru.ocir.io -u "$OCI_NAMESPACE/ci-deploy" --password-stdin
+            docker pull "$OCIR_URI:$IMAGE_TAG"
+            docker stop "$CONTAINER_NAME" || true
+            docker rm "$CONTAINER_NAME" || true
+            docker run -d --name "$CONTAINER_NAME" --restart unless-stopped -p 80:8000 "$OCIR_URI:$IMAGE_TAG"
+            docker image prune -f
+            docker images "$OCIR_URI" --format '{{.Tag}}' | grep -xv "$IMAGE_TAG" | xargs -r -I{} docker rmi "$OCIR_URI:{}" || true
+          EOF
+
+      - name: Revogar IP do runner na porta 22
+        if: always()
+        run: |
+          for attempt in $(seq 1 8); do
+            oci network security-list get --security-list-id "$OCI_SECURITY_LIST_ID" > /tmp/sl.json
+            ETAG=$(python3 -c "import json; print(json.load(open('/tmp/sl.json'))['etag'])")
+
+            python3 -c "
+          import json
+          sl = json.load(open('/tmp/sl.json'))
+          rules = [r for r in sl['data']['ingress-security-rules'] if r.get('source') != '$RUNNER_IP/32']
+          json.dump(rules, open('/tmp/new-rules.json', 'w'))
+          "
+            oci network security-list update --security-list-id "$OCI_SECURITY_LIST_ID" \
+              --ingress-security-rules file:///tmp/new-rules.json --if-match "$ETAG" --force && break
+            echo "Conflito de concorrência ao revogar IP (tentativa $attempt), tentando de novo..."
+            sleep $(( (RANDOM % 5) + 1 ))
+          done
+
+      - name: Smoke test (/health)
+        run: |
+          for i in $(seq 1 10); do
+            CODE=$(curl -s -o /tmp/health.json -w '%{http_code}' "http://$PUBLIC_IP/health" || echo "000")
+            if [ "$CODE" = "200" ]; then
+              echo "OK: /health respondeu 200"
+              cat /tmp/health.json
+              exit 0
+            fi
+            echo "Tentativa $i: /health respondeu $CODE"
+            sleep 5
+          done
+          echo "Smoke test falhou: /health não respondeu 200 a tempo"
+          exit 1
+
+      - name: Limpar imagens antigas no OCIR
+        # Mantém a imagem recém-publicada ($IMAGE_TAG) e a anterior com tag (rollback),
+        # cada uma com seus manifests filhos (amd64, arm64, attestations). Apaga o resto
+        # do repositório para não passar do limite grátis. Compara por digest, não por
+        # OCID. Se falhar, só gera aviso: o deploy já deu certo e não é derrubado.
+        continue-on-error: true
+        timeout-minutes: 30
+        run: |
+          set -euo pipefail
+          trap 'echo "::warning::Limpeza do OCIR falhou (linha $LINENO). O deploy não foi afetado; imagens antigas ficaram no repositório $OCIR_REPOSITORY."' ERR
+
+          oci artifacts container image list \
+            --compartment-id "$OCI_COMPARTMENT_ID" \
+            --repository-name "$OCIR_REPOSITORY" \
+            --all > /tmp/ocir-images.json
+
+          children() {
+            docker buildx imagetools inspect --raw "$1" \
+              | python3 -c "import json, sys; print('\n'.join(m['digest'] for m in json.load(sys.stdin).get('manifests', [])))"
+          }
+
+          CURRENT_DIGEST=$(docker buildx imagetools inspect "$OCIR_URI:$IMAGE_TAG" --format '{{.Manifest.Digest}}')
+          [[ "$CURRENT_DIGEST" == sha256:* ]] || { echo "Digest da tag $IMAGE_TAG inválido: '$CURRENT_DIGEST'"; exit 1; }
+
+          # Imagem com tag mais recente, anterior à atual e com outro digest (duas tags no mesmo digest contam como uma imagem)
+          PREVIOUS_DIGEST=$(CURRENT_DIGEST="$CURRENT_DIGEST" python3 -c "
+          import json, os
+          items = json.load(open('/tmp/ocir-images.json'))['data']['items']
+          current = os.environ['CURRENT_DIGEST']
+          if not any(i['digest'] == current for i in items):
+              raise SystemExit(f'Digest atual {current} não aparece na listagem do repositório; abortando por segurança')
+          current_time = min(i['time-created'] for i in items if i['digest'] == current)
+          tagged = [
+              i for i in items
+              if i.get('version') and i['digest'] != current and i['lifecycle-state'] == 'AVAILABLE' and i['time-created'] < current_time
+          ]
+          tagged.sort(key=lambda i: i['time-created'], reverse=True)
+          print(tagged[0]['digest'] if tagged else '')
+          ")
+
+          {
+            echo "$CURRENT_DIGEST"
+            children "$OCIR_URI@$CURRENT_DIGEST"
+            if [ -n "$PREVIOUS_DIGEST" ]; then
+              echo "$PREVIOUS_DIGEST"
+              children "$OCIR_URI@$PREVIOUS_DIGEST"
+            fi
+          } | sort -u > /tmp/ocir-keep.txt
+          echo "Mantendo $(wc -l < /tmp/ocir-keep.txt) digests (atual: $CURRENT_DIGEST, anterior: ${PREVIOUS_DIGEST:-nenhuma}):"
+          cat /tmp/ocir-keep.txt
+
+          # Só apaga o que é mais antigo que a imagem atual (uma publicada no meio, por outro
+          # dispatch ou push manual, fica). Tagueadas (indexes) primeiro, para os filhos não
+          # ficarem presos a um index ainda existente. Uma imagem com várias tags aparece
+          # várias vezes na listagem com o mesmo OCID: deduplica mantendo a ordem.
+          CURRENT_DIGEST="$CURRENT_DIGEST" python3 -c "
+          import json, os
+          keep = set(open('/tmp/ocir-keep.txt').read().split())
+          items = json.load(open('/tmp/ocir-images.json'))['data']['items']
+          current_time = min(i['time-created'] for i in items if i['digest'] == os.environ['CURRENT_DIGEST'])
+          old = [
+              i for i in items
+              if i['digest'] not in keep and i['lifecycle-state'] == 'AVAILABLE' and i['time-created'] < current_time
+          ]
+          old.sort(key=lambda i: not i.get('version'))
+          print('\n'.join(dict.fromkeys(i['id'] for i in old)))
+          " > /tmp/ocir-delete.txt
+
+          TOTAL=$(grep -c . /tmp/ocir-delete.txt || true)
+          echo "Apagando $TOTAL imagens antigas de $(python3 -c "import json; print(len(json.load(open('/tmp/ocir-images.json'))['data']['items']))") no repositório $OCIR_REPOSITORY"
+          : > /tmp/ocir-failed.txt
+          while read -r IMAGE_ID; do
+            [ -n "$IMAGE_ID" ] || continue
+            oci artifacts container image delete --image-id "$IMAGE_ID" --force > /dev/null 2>&1 \
+              || echo "$IMAGE_ID" >> /tmp/ocir-failed.txt
+          done < /tmp/ocir-delete.txt
+
+          # Segunda passada: um filho pode ter falhado por ainda estar referenciado por um index já apagado
+          FAILED=0
+          while read -r IMAGE_ID; do
+            [ -n "$IMAGE_ID" ] || continue
+            oci artifacts container image delete --image-id "$IMAGE_ID" --force > /dev/null \
+              || { echo "::warning::Não consegui apagar $IMAGE_ID"; FAILED=$((FAILED + 1)); }
+          done < /tmp/ocir-failed.txt
+
+          echo "Limpeza do OCIR: $((TOTAL - FAILED)) de $TOTAL apagadas, $FAILED falharam"
+          [ "$FAILED" -eq 0 ]
