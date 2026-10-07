@@ -220,11 +220,9 @@ A documentação interativa está disponível em `/docs` (Swagger) e `/redoc`.
 
 ## CI/CD
 
-CI e deploy rodam no Jenkins da plataforma (`Jenkinsfile` → `appPipeline` da Shared Library `platform`, repo devops-platform), disparados por webhooks. Sem GitHub Actions.
-
-- **PRs e branches** — validação do contrato; `docker build --target test` (`ruff check`, `ruff format --check`, `mypy`, `pytest` com cobertura ≥90% em Python 3.11 e 3.12, versões das ferramentas no `config/requirements-dev.txt`); `pip-audit` no `config/requirements.lock`; Trivy (CRITICAL/HIGH) na imagem de runtime.
-- **main** — tudo acima e depois build, smoke test, push para o OCIR, deploy atrás do Traefik com rollback automático, release com o python-semantic-release (versão, CHANGELOG, tag e release no GitHub) e rebuild do portfolio. Também é reconstruída toda segunda para pegar patches de segurança.
-- **Dependências** — Renovate (job `platform/renovate` no Jenkins, `renovate.json` → preset do devops-platform): atualizações diárias, manutenção semanal do lockfile, issue "Dependency Dashboard" e auto-merge de patch/minor depois que o Jenkins aprova.
+- **pipeline_python.yaml** — a cada push/PR: `ruff check`, `ruff format --check`,
+  `pytest` com cobertura (Python 3.11 e 3.12) e `mypy`.
+- **pipeline_docker.yaml** — a cada push/PR: constrói a imagem Docker.
 
 ## Estrutura do projeto
 
