@@ -19,7 +19,6 @@ env:
   OCIR_REPOSITORY: sentiment-analysis-api
   GHCR_IMAGE: ghcr.io/thentsation/sentiment-analysis-api
   CONTAINER_NAME: sentiment-analysis-api
-  APP_HOST: sentiment.137-131-175-7.sslip.io
   APP_PORT: 8000
   HEALTH_PATH: /health
 
@@ -114,7 +113,7 @@ jobs:
             sleep $(( (RANDOM % 5) + 1 ))
           done
 
-      - name: Deploy via SSH
+      - name: Subir a API num container temporário, checar a saúde e remover
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.OCI_SSH_PRIVATE_KEY }}" > ~/.ssh/oci_key.pem
@@ -133,28 +132,21 @@ jobs:
             flock -w 600 200 || { echo "Timeout aguardando lock de deploy"; exit 1; }
             echo "${{ secrets.OCI_AUTH_TOKEN }}" | docker login gru.ocir.io -u "$OCI_NAMESPACE/ci-deploy" --password-stdin
             docker pull "$OCIR_URI:$IMAGE_TAG"
-            docker network inspect proxy >/dev/null
-            docker stop "$CONTAINER_NAME" || true
-            docker rm -f "$CONTAINER_NAME-old" || true
-            docker rename "$CONTAINER_NAME" "$CONTAINER_NAME-old" || true
-            if ! docker run -d --name "$CONTAINER_NAME" --restart unless-stopped \
-              --network proxy \
+            docker rm -f "$CONTAINER_NAME-smoke" || true
+            docker run -d --name "$CONTAINER_NAME-smoke" \
               --health-cmd "python -c \"import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:$APP_PORT$HEALTH_PATH', timeout=4).status == 200 else 1)\"" \
-              --health-interval 15s --health-retries 3 --health-start-period 20s \
-              --label traefik.enable=true \
-              --label traefik.docker.network=proxy \
-              --label "traefik.http.routers.$CONTAINER_NAME.rule=Host(\\\`$APP_HOST\\\`)" \
-              --label traefik.http.routers.$CONTAINER_NAME.entrypoints=websecure \
-              --label traefik.http.routers.$CONTAINER_NAME.tls.certresolver=letsencrypt \
-              --label traefik.http.services.$CONTAINER_NAME.loadbalancer.server.port=$APP_PORT \
-              "$OCIR_URI:$IMAGE_TAG"; then
-              echo "Falha ao subir a nova versão, restaurando a anterior"
-              docker rm -f "$CONTAINER_NAME" || true
-              docker rename "$CONTAINER_NAME-old" "$CONTAINER_NAME" || true
-              docker start "$CONTAINER_NAME" || true
-              exit 1
-            fi
-            docker rm -f "$CONTAINER_NAME-old" || true
+              --health-interval 5s --health-retries 3 --health-start-period 10s \
+              "$OCIR_URI:$IMAGE_TAG"
+            ok=0
+            for i in \$(seq 1 30); do
+              s=\$(docker inspect -f '{{.State.Health.Status}}' "$CONTAINER_NAME-smoke")
+              echo "Tentativa \$i: \$s"
+              [ "\$s" = healthy ] && { ok=1; break; }
+              sleep 5
+            done
+            docker logs --tail 30 "$CONTAINER_NAME-smoke" || true
+            docker rm -f "$CONTAINER_NAME-smoke" || true
+            [ "\$ok" = 1 ] || { echo "A API não ficou saudável a tempo"; exit 1; }
             docker image prune -f
             docker images "$OCIR_URI" --format '{{.Tag}}' | grep -xv "$IMAGE_TAG" | xargs -r -I{} docker rmi "$OCIR_URI:{}" || true
           EOF
@@ -177,21 +169,6 @@ jobs:
             echo "Conflito de concorrência ao revogar IP (tentativa $attempt), tentando de novo..."
             sleep $(( (RANDOM % 5) + 1 ))
           done
-
-      - name: Smoke test (/health)
-        run: |
-          for i in $(seq 1 10); do
-            CODE=$(curl -s -o /tmp/health.json -w '%{http_code}' "https://$APP_HOST$HEALTH_PATH" || echo "000")
-            if [ "$CODE" = "200" ]; then
-              echo "OK: /health respondeu 200"
-              cat /tmp/health.json
-              exit 0
-            fi
-            echo "Tentativa $i: /health respondeu $CODE"
-            sleep 5
-          done
-          echo "Smoke test falhou: /health não respondeu 200 a tempo"
-          exit 1
 
       - name: Limpar imagens antigas no OCIR
         # Mantém a imagem recém-publicada ($IMAGE_TAG) e a anterior com tag (rollback),
