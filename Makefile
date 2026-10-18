@@ -5,7 +5,7 @@ PORT ?= 8000
 VENV := .venv
 
 run:
-	$(TELVAX) serve src/main.tvx --port $(PORT) --metrics --log-format json --cors '*' --rate-limit 100/min --security-headers
+	$(TELVAX) serve src/main.tvx --port $(PORT) --metrics --log-format json --cors '*' --rate-limit 100/min --security-headers --error-format detail --process-time-header
 
 dev:
 	$(TELVAX) serve src/main.tvx --port $(PORT) --metrics --log-format text

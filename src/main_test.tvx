@@ -1,0 +1,64 @@
+# Tests of the service around the analyzers: the classes, the limits, the cache and the job store.
+from main import classify, check_texts, invalid_text, invalid_language, analyze_sentiment, cache, remember, forget_oldest, job_status, job_order, job_results, known, cache_key
+from analyzer import Scores
+
+fn test_classes_follow_the_thresholds():
+    assert_eq(classify(0.06), "positive")
+    assert_eq(classify(0.05), "neutral")
+    assert_eq(classify(0.0), "neutral")
+    assert_eq(classify(-0.05), "neutral")
+    assert_eq(classify(-0.06), "negative")
+
+fn test_text_length_limit_is_10000_characters():
+    let ok = std.string.repeat("a", 10000)
+    let long = std.string.repeat("a", 10001)
+    assert(invalid_text(ok).is_none())
+    assert(invalid_text(long).is_some())
+    # Characters, not bytes
+    assert(invalid_text(std.string.repeat("é", 10000)).is_none())
+
+fn test_only_english_and_portuguese():
+    assert(invalid_language("en").is_none())
+    assert(invalid_language("pt").is_none())
+    assert(invalid_language("fr").is_some())
+    assert(invalid_language("").is_some())
+
+fn test_a_list_of_texts_has_to_fit():
+    assert(check_texts(["a"], "en").is_none())
+    assert(check_texts([], "en").is_some())
+    assert(check_texts(["a"], "fr").is_some())
+    let many: List[Text] = []
+    for i in range(101):
+        many.push(f"text {i}")
+    assert(check_texts(many, "en").is_some())
+    many.pop()
+    assert(check_texts(many, "en").is_none())
+
+fn test_the_cache_keeps_a_score_and_clear_says_how_many():
+    cache.clear()
+    let first = analyze_sentiment("I love this!", "en")
+    assert_eq(cache.len(), 1)
+    let second = analyze_sentiment("I love this!", "en")
+    assert_eq(first.compound, second.compound)
+    assert_eq(cache.len(), 1)
+    # The same text in another language is another entry.
+    analyze_sentiment("I love this!", "pt")
+    assert_eq(cache.len(), 2)
+    assert_eq(cache.clear(), 2)
+    assert_eq(cache.len(), 0)
+
+fn test_the_cache_key_has_the_language():
+    assert(cache_key("x", "en") != cache_key("x", "pt"))
+
+fn test_the_job_store_forgets_the_oldest_job():
+    let none: Map[Text, Scores] = std.map.new()
+    # job_store_maxsize is 100 by default
+    for i in range(105):
+        remember(f"job{i}", "en", 1, 0, "pending", none)
+    assert(not job_status.contains_key("job0"))
+    assert(not job_status.contains_key("job4"))
+    assert(job_status.contains_key("job5"))
+    assert(job_status.contains_key("job104"))
+    assert_eq(job_order.len(), 100)
+    assert(known("job104"))
+    assert(not known("never-made"))

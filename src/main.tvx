@@ -25,7 +25,7 @@ fn int_setting(name: Text, default: Int) -> Int:
 let version = setting("VERSION", "1.0.0")
 let admin_token = setting("ADMIN_TOKEN", "")
 let cache_maxsize = int_setting("CACHE_MAXSIZE", 10000)
-let cache_ttl_seconds = std.math.to_float(int_setting("CACHE_TTL_SECONDS", 300))
+let cache_ttl_seconds = setting("CACHE_TTL_SECONDS", "").to_float().unwrap_or(300.0)
 let job_store_maxsize = int_setting("JOB_STORE_MAXSIZE", 100)
 
 # --- Request and answer types -------------------------------------------------------------
@@ -129,8 +129,7 @@ let sentiment_classes: Map[Text, Text] = {
     "negative": "Scores less than -0.05",
 }
 
-let cached: Map[Text, Scores] = {}
-let cached_at: Map[Text, Float] = {}
+let cache = std.cache.new(cache_maxsize, cache_ttl_seconds)
 
 fn classify(compound: Float) -> Text:
     if compound > 0.05:
@@ -143,36 +142,22 @@ fn cache_key(text: Text, language: Text) -> Text:
     language + ":" + text
 
 fn cache_get(text: Text, language: Text) -> Scores?:
-    let key = cache_key(text, language)
-    match cached_at.get(key):
+    match cache.get(cache_key(text, language)):
+        case Some(hit):
+            std.metrics.count("cache_hits_total")
+            Some(hit)
         case None:
-            std.metrics.count("cache_misses")
+            std.metrics.count("cache_misses_total")
             None
-        case Some(at):
-            if std.time.now() - at >= cache_ttl_seconds:
-                cached.remove(key)
-                cached_at.remove(key)
-                std.metrics.count("cache_misses")
-                return None
-            std.metrics.count("cache_hits")
-            cached.get(key)
 
-# A map keeps its keys in order, not the order they came in, so when the cache is full the entry that
-# goes is the first key, not the oldest.
 fn cache_set(text: Text, language: Text, scores: Scores):
-    if std.math.to_int(cached.len()) >= cache_maxsize:
-        if cached.keys().first() is Some(first):
-            cached.remove(first)
-            cached_at.remove(first)
-    let key = cache_key(text, language)
-    cached.insert(key, scores)
-    cached_at.insert(key, std.time.now())
+    cache.set(cache_key(text, language), scores)
 
 fn analyze_sentiment(text: Text, language: Text) -> Scores:
     if cache_get(text, language) is Some(hit):
         return hit
     let scores = analyze(text, language)
-    std.metrics.count(f"sentiment_analysis_{language}_{classify(scores.compound)}")
+    std.metrics.count("sentiment_analysis_total", {"language": language, "sentiment": classify(scores.compound)})
     cache_set(text, language, scores)
     scores
 
@@ -247,11 +232,7 @@ fn analyze_statistics(input: MultiTextRequest) -> Result[Response, Status]:
 fn invalidate_cache(req: Request) -> Result[Response, Status]:
     if admin_token != "" and req.header("x-admin-token") != Some(admin_token):
         return Ok(failure(401, "Invalid admin token"))
-    let cleared = cached.len()
-    for key in cached.keys():
-        cached.remove(key)
-        cached_at.remove(key)
-    Ok(Response.new(CacheInvalidationResponse(status: "cache invalidated", cleared: std.math.to_int(cleared))))
+    Ok(Response.new(CacheInvalidationResponse(status: "cache invalidated", cleared: cache.clear())))
 
 # --- Batch jobs ---------------------------------------------------------------------------
 #
@@ -348,7 +329,7 @@ fn set_status(id: Text, status: Text):
 
 fn finish(id: Text, status: Text):
     set_status(id, status)
-    std.metrics.count(f"batch_jobs_{status}")
+    std.metrics.count("batch_jobs_total", {"status": status})
 
 async fn process_job(id: Text, texts: List[Text], language: Text):
     set_status(id, "processing")
@@ -371,8 +352,11 @@ fn submit_batch(input: MultiTextRequest) -> Result[Response, Status]:
     remember(id, input.language, total, 0, "pending", empty)
     init_db()
     persist("INSERT INTO sentiment_jobs (id, language, total) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING", (id, input.language, total))
-    std.metrics.count("batch_jobs_accepted")
-    std.task.spawn(process_job(id, input.texts, input.language))
+    std.metrics.count("batch_jobs_total", {"status": "accepted"})
+    # If the task fails, the job is marked as failed instead of staying in `processing`.
+    fn failed(message: Text):
+        finish(id, "failed")
+    std.task.spawn(process_job(id, input.texts, input.language), failed)
     Ok(Response.new(BatchAcceptedResponse(job_id: id, status: "pending", total: total, results_url: "/v1/results/" + id)).status(202))
 
 @endpoint(GET, "/v1/results/{job_id}")

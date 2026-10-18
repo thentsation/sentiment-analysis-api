@@ -83,3 +83,25 @@ description.
 
 The margin on 100 texts per request is the thinnest, 24% to 30%; that is the scenario where scoring, not the web layer,
 decides, and the Telvax scorer is still an interpreter running about as fast as the Python one on a single thread.
+
+## Fourth run, with the eight changes of the second round
+
+The program now uses `std.cache` (least recently used, expiry), counters with labels, `on_error` for failed jobs, the
+error format of FastAPI and the time header (telvax/telvax#166, #175 to #179). Same method as the third run: the median
+of three `ab` runs, Python 3.12, 10 cores, no keep-alive; 52 tests pass (45 fixed texts and 7 of the cache, the limits and
+the job store), `tests/api.sh` passes 28 checks, and 800 random sentences still give the same scores as Python.
+
+| Scenario | Python 1 worker | Python 10 workers | Telvax | Telvax vs best Python | Third run |
+| --- | --- | --- | --- | --- | --- |
+| Cache miss EN, 20 connections | 1,244 req/s | 3,368 | 44,193 | 13.1x | 36,629 |
+| Cache miss PT, 20 connections | 1,219 | 3,359 | 45,046 | 13.4x | 36,681 |
+| 100 texts per request, 1 connection | 232 | 218 | 284 | 1.22x | 282 |
+| 100 texts per request, 10 connections | 265 | 1,074 | 1,362 | 1.27x | 1,269 |
+| Cache hit EN, 1 connection | 773 | 710 | 14,496 | 18.8x | 14,404 |
+| Cache hit EN, 20 connections | 1,278 | 3,567 | 53,061 | 14.9x | 50,847 |
+| Cache hit EN, 100 connections | 1,236 | 4,628 | 49,382 | 10.7x | 46,711 |
+
+Telvax is ahead in every scenario. The scenario with the least room is the same as before, 100 texts per request: the work
+there is the scorer itself, an interpreter that runs about as fast as CPython on one thread and uses the cores better. The
+gains over the third run (up to 20% for single texts, 7% for the batch) come from the cache, which no longer takes a global
+lock per entry, and from the counters, which no longer build a name by hand.
