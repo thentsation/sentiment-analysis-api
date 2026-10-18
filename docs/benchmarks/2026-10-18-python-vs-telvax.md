@@ -25,7 +25,7 @@ Resident memory after the runs: Python 83 MB, Telvax 30 MB.
 
 ## Notes
 
-- The Python service spends most of its time in five `BaseHTTPMiddleware` layers and Pydantic; the same text analyzed
-  directly takes far less than the 0.9 ms a request costs. The ratio on a cache miss is therefore a measure of the whole
-  service, not of the VADER code alone.
+- In Python the analyzers alone take 0.03 ms (VADER) and 0.04 ms (LeIA) per text, measured with `timeit`, while a request
+  costs about 0.9 ms: the time goes to the web layers (five `BaseHTTPMiddleware`, Pydantic, the response model). The ratio
+  on a cache miss is therefore a measure of the whole service, not of the scoring code alone.
 - The older numbers in `2026-08-20-cache-benchmark.md` were taken with Locust on another setup.
