@@ -134,7 +134,7 @@ jobs:
             docker pull "$OCIR_URI:$IMAGE_TAG"
             docker rm -f "$CONTAINER_NAME-smoke" || true
             docker run -d --name "$CONTAINER_NAME-smoke" \
-              --health-cmd "python -c \"import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:$APP_PORT$HEALTH_PATH', timeout=4).status == 200 else 1)\"" \
+              --health-cmd "/service --healthcheck $HEALTH_PATH" \
               --health-interval 5s --health-retries 3 --health-start-period 10s \
               "$OCIR_URI:$IMAGE_TAG"
             ok=0

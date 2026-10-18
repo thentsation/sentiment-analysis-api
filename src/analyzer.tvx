@@ -1,0 +1,386 @@
+# VADER (English) and LeIA (Portuguese) polarity scores. LeIA is a fork of VADER, so one
+# algorithm runs over a `Lang`: its lexicon, negations, boosters and the few rules that differ.
+
+type Scores:
+    compound: Float
+    pos: Float
+    neu: Float
+    neg: Float
+
+type Lang:
+    lexicon: Map[Text, Float]
+    negate: List[Text]
+    boosters: Map[Text, Float]
+    portuguese: Bool
+
+let b_incr = 0.293
+let b_decr = -0.293
+let c_incr = 0.733
+let n_scalar = -0.74
+
+let en_idioms: Map[Text, Float] = {
+    "the shit": 3.0,
+    "the bomb": 3.0,
+    "bad ass": 1.5,
+    "yeah right": -2.0,
+    "cut the mustard": 2.0,
+    "kiss of death": -1.5,
+    "hand to mouth": -2.0,
+}
+
+let en_punc = [".", "!", "?", ",", ";", ":", "-", "'", "\"", "!!", "!!!", "??", "???", "?!?", "!?!", "?!?!", "!?!?"]
+let pt_punc = [".", "!", "?", ",", ";", ":", "-", "'", "\"", "...", "!?", "?!", "!!", "!!!", "??", "???", "?!?", "!?!", "?!?!", "!?!?"]
+
+fn load_lexicon(content: Text) -> Map[Text, Float]:
+    let words: Map[Text, Float] = std.map.new()
+    for line in content.lines():
+        let parts = line.trim().split("\t")
+        if parts.len() >= 2:
+            match parts[1].to_float():
+                case Some(v):
+                    words.insert(parts[0], v)
+                case None:
+                    pass
+    words
+
+fn load_lines(content: Text) -> List[Text]:
+    content.lines().map(l => l.trim()).filter(l => not l.is_empty())
+
+fn load_boosters(content: Text) -> Map[Text, Float]:
+    let boosters: Map[Text, Float] = std.map.new()
+    for line in content.lines():
+        let parts = line.trim().split(" ")
+        if parts.len() >= 2:
+            let last = parts[parts.len() - 1]
+            let word = parts.slice(0, parts.len() - 1).join(" ")
+            boosters.insert(word, b_incr if last == "INCR" else b_decr)
+    boosters
+
+let english = Lang(
+    lexicon: load_lexicon(std.fs.embed("lexicons/en_lexicon.txt")),
+    negate: load_lines(std.fs.embed("lexicons/en_negate.txt")),
+    boosters: load_boosters(std.fs.embed("lexicons/en_booster.txt")),
+    portuguese: False,
+)
+
+let portuguese = Lang(
+    lexicon: load_lexicon(std.fs.embed("lexicons/pt_lexicon.txt")),
+    negate: load_lines(std.fs.embed("lexicons/pt_negate.txt")),
+    boosters: load_boosters(std.fs.embed("lexicons/pt_booster.txt")),
+    portuguese: True,
+)
+
+# Python's `str.isupper`: at least one letter, and no lower case one.
+fn is_upper(word: Text) -> Bool:
+    word.to_uppercase() == word and word.to_lowercase() != word
+
+fn char_len(word: Text) -> Int:
+    std.math.to_int(word.chars().len())
+
+fn is_punct_char(c: Text) -> Bool:
+    std.text.matches(c, "^[!-/:-@\\[-`{-~]$")
+
+# Python's `text.split()`.
+fn split_words(text: Text) -> List[Text]:
+    let one = std.text.replace_all(text, "\\s+", " ").trim()
+    if one.is_empty():
+        return []
+    one.split(" ")
+
+# The words of the text with the punctuation around each one taken off, as SentiText does:
+# `great!` and `!great` are `great`, but `!great!` and `a.b` stay as they are.
+fn strip_punct(token: Text, punc: List[Text]) -> Text:
+    let cs = token.chars()
+    var lead = 0
+    while lead < cs.len() and is_punct_char(cs[lead]):
+        lead += 1
+    var tail = 0
+    while tail < cs.len() - lead and is_punct_char(cs[cs.len() - 1 - tail]):
+        tail += 1
+    let inner = cs.len() - lead - tail
+    if inner < 2:
+        return token
+    var has_inner_punct = False
+    for k in range(lead, lead + inner):
+        if is_punct_char(cs[k]):
+            has_inner_punct = True
+    if has_inner_punct:
+        return token
+    let word = cs.slice(lead, lead + inner).join("")
+    if lead > 0 and tail == 0 and punc.contains(cs.slice(0, lead).join("")):
+        return word
+    if tail > 0 and lead == 0 and punc.contains(cs.slice(lead + inner, cs.len()).join("")):
+        return word
+    token
+
+fn tokens(text: Text, lang: Lang) -> List[Text]:
+    let punc = pt_punc if lang.portuguese else en_punc
+    split_words(text).filter(t => char_len(t) > 1).map(t => strip_punct(t, punc))
+
+fn size(xs: List[Text]) -> Int:
+    std.math.to_int(xs.len())
+
+fn index_of(words: List[Text], word: Text) -> Int:
+    for k in range(size(words)):
+        if words[k] == word:
+            return k
+    - 1
+
+fn lower_all(words: List[Text]) -> List[Text]:
+    words.map(w => w.to_lowercase())
+
+fn caps_differ(words: List[Text]) -> Bool:
+    var caps = 0
+    for w in words:
+        if is_upper(w):
+            caps += 1
+    let rest = words.len() - caps
+    rest > 0 and rest < words.len()
+
+fn negated(lang: Lang, word: Text) -> Bool:
+    let w = word.to_lowercase()
+    if lang.negate.contains(w):
+        return True
+    if not lang.portuguese and w.contains("n't"):
+        return True
+    False
+
+fn scalar_inc_dec(lang: Lang, word: Text, valence: Float, cap_diff: Bool) -> Float:
+    match lang.boosters.get(word.to_lowercase()):
+        case None:
+            0.0
+        case Some(base):
+            var s = base
+            if valence < 0.0:
+                s = s * -1.0
+            if is_upper(word) and cap_diff:
+                if valence > 0.0:
+                    s += c_incr
+                else:
+                    s -= c_incr
+            s
+
+fn is_so_this(w: Text) -> Bool:
+    w == "so" or w == "this"
+
+fn is_entao_este(w: Text) -> Bool:
+    w == "entao" or w == "este"
+
+fn negation_check(lang: Lang, valence: Float, lower: List[Text], start_i: Int, i: Int) -> Float:
+    var v = valence
+    if start_i == 0:
+        if negated(lang, lower[i - 1]):
+            v = v * n_scalar
+    elif start_i == 1:
+        if lang.portuguese:
+            if lower[i - 2] == "nunca" and is_entao_este(lower[i - 1]):
+                v = v * 1.25
+            elif negated(lang, lower[i - 2]):
+                v = v * n_scalar
+        else:
+            if lower[i - 2] == "never" and is_so_this(lower[i - 1]):
+                v = v * 1.5
+            elif negated(lang, lower[i - 2]):
+                v = v * n_scalar
+    else:
+        if lang.portuguese:
+            if (lower[i - 3] == "nunca" and is_entao_este(lower[i - 2])) or is_entao_este(lower[i - 1]):
+                v = v * 1.25
+            elif negated(lang, lower[i - 3]):
+                v = v * n_scalar
+        else:
+            if (lower[i - 3] == "never" and is_so_this(lower[i - 2])) or is_so_this(lower[i - 1]):
+                v = v * 1.25
+            elif negated(lang, lower[i - 3]):
+                v = v * n_scalar
+    v
+
+fn idiom_value(idioms: Map[Text, Float], key: Text, current: Float) -> Float:
+    match idioms.get(key):
+        case Some(x):
+            x
+        case None:
+            current
+
+# English looks idioms up in the words as written; the booster check differs by language.
+fn idioms_check(lang: Lang, valence: Float, words: List[Text], lower: List[Text], i: Int) -> Float:
+    var v = valence
+    let idioms = en_idioms
+    let seen = lower if lang.portuguese else words
+    let onezero = seen[i - 1] + " " + seen[i]
+    let twoonezero = seen[i - 2] + " " + seen[i - 1] + " " + seen[i]
+    let twoone = seen[i - 2] + " " + seen[i - 1]
+    let threetwoone = seen[i - 3] + " " + seen[i - 2] + " " + seen[i - 1]
+    let threetwo = seen[i - 3] + " " + seen[i - 2]
+    if not lang.portuguese:
+        var found = False
+        for seq in [onezero, twoonezero, twoone, threetwoone, threetwo]:
+            if not found and idioms.contains_key(seq):
+                v = idiom_value(en_idioms, seq, v)
+                found = True
+        if size(seen) - 1 > i:
+            v = idiom_value(en_idioms, seen[i] + " " + seen[i + 1], v)
+        if size(seen) - 1 > i + 1:
+            v = idiom_value(en_idioms, seen[i] + " " + seen[i + 1] + " " + seen[i + 2], v)
+        if lang.boosters.contains_key(threetwo) or lang.boosters.contains_key(twoone):
+            v = v + b_decr
+    else:
+        for gram in [threetwoone, threetwo, twoone]:
+            match lang.boosters.get(gram):
+                case Some(b):
+                    v = v + b
+                case None:
+                    pass
+    v
+
+fn least_check(lang: Lang, valence: Float, lower: List[Text], i: Int) -> Float:
+    if lang.portuguese:
+        return valence
+    if i > 1 and not lang.lexicon.contains_key(lower[i - 1]) and lower[i - 1] == "least":
+        if lower[i - 2] != "at" and lower[i - 2] != "very":
+            return valence * n_scalar
+    elif i > 0 and not lang.lexicon.contains_key(lower[i - 1]) and lower[i - 1] == "least":
+        return valence * n_scalar
+    valence
+
+fn word_valence(lang: Lang, words: List[Text], lower: List[Text], cap_diff: Bool, item: Text, i: Int) -> Float:
+    let key = item.to_lowercase()
+    match lang.lexicon.get(key):
+        case None:
+            0.0
+        case Some(base):
+            var v = base
+            if is_upper(item) and cap_diff:
+                if v > 0.0:
+                    v += c_incr
+                else:
+                    v -= c_incr
+            for start_i in range(3):
+                if i > start_i and not lang.lexicon.contains_key(lower[i - start_i - 1]):
+                    var s = scalar_inc_dec(lang, words[i - start_i - 1], v, cap_diff)
+                    if start_i == 1 and s != 0.0:
+                        s = s * 0.95
+                    if start_i == 2 and s != 0.0:
+                        s = s * 0.9
+                    v = v + s
+                    v = negation_check(lang, v, lower, start_i, i)
+                    if start_i == 2:
+                        v = idioms_check(lang, v, words, lower, i)
+            least_check(lang, v, lower, i)
+
+fn first_index_of_float(xs: List[Float], x: Float) -> Int:
+    for k in range(std.math.to_int(xs.len())):
+        if xs[k] == x:
+            return k
+    - 1
+
+# VADER weighs words before "but" by 0.5 and after it by 1.5. LeIA copies that code with a `return`
+# inside the loop, so only "mas" counts, and each value is found by `list.index`, the first equal one.
+fn but_check(lang: Lang, lower: List[Text], sentiments: List[Float]) -> List[Float]:
+    let conj = "mas" if lang.portuguese else "but"
+    let bi = index_of(lower, conj)
+    if bi < 0:
+        return sentiments
+    var out = sentiments.map(s => s)
+    if lang.portuguese:
+        for p in range(std.math.to_int(out.len())):
+            let s = out[p]
+            let si = first_index_of_float(out, s)
+            if si < bi:
+                out[si] = s * 0.5
+            elif si > bi:
+                out[si] = s * 1.5
+    else:
+        for p in range(std.math.to_int(out.len())):
+            if p < bi:
+                out[p] = out[p] * 0.5
+            elif p > bi:
+                out[p] = out[p] * 1.5
+    out
+
+fn emphasis(text: Text) -> Float:
+    var ep = std.math.to_int(std.text.find_all(text, "!").len())
+    if ep > 4:
+        ep = 4
+    let qm = std.math.to_int(std.text.find_all(text, "\\?").len())
+    var qa = 0.0
+    if qm > 1:
+        qa = std.math.to_float(qm) * 0.18 if qm <= 3 else 0.96
+    std.math.to_float(ep) * 0.292 + qa
+
+# Python's `round(x, places)`: a tie goes to the even neighbour.
+fn round_to(x: Float, places: Int) -> Float:
+    let k = std.math.pow(10.0, places)
+    let y = x * k
+    let f = std.math.floor(y)
+    if y - f == 0.5:
+        let even = f - 2.0 * std.math.floor(f / 2.0) == 0.0
+        return (f if even else f + 1.0) / k
+    std.math.round(y) / k
+
+fn zero_scores() -> Scores:
+    Scores(compound: 0.0, pos: 0.0, neu: 0.0, neg: 0.0)
+
+fn score_valence(sentiments: List[Float], text: Text) -> Scores:
+    if sentiments.is_empty():
+        return zero_scores()
+    var sum_s = 0.0
+    for s in sentiments:
+        sum_s += s
+    let amp = emphasis(text)
+    if sum_s > 0.0:
+        sum_s += amp
+    elif sum_s < 0.0:
+        sum_s -= amp
+    var compound = sum_s / std.math.sqrt(sum_s * sum_s + 15.0)
+    if compound > 1.0:
+        compound = 1.0
+    if compound < -1.0:
+        compound = -1.0
+    var pos_sum = 0.0
+    var neg_sum = 0.0
+    var neu = 0
+    for s in sentiments:
+        if s > 0.0:
+            pos_sum += s + 1.0
+        if s < 0.0:
+            neg_sum += s - 1.0
+        if s == 0.0:
+            neu += 1
+    if pos_sum > std.math.abs(neg_sum):
+        pos_sum += amp
+    elif pos_sum < std.math.abs(neg_sum):
+        neg_sum -= amp
+    let total = pos_sum + std.math.abs(neg_sum) + std.math.to_float(neu)
+    Scores(
+        compound: round_to(compound, 4),
+        pos: round_to(std.math.abs(pos_sum / total), 3),
+        neu: round_to(std.math.abs(std.math.to_float(neu) / total), 3),
+        neg: round_to(std.math.abs(neg_sum / total), 3),
+    )
+
+# LeIA drops accents and every other non-ASCII character before it looks at the words.
+fn prepare(text: Text, lang: Lang) -> Text:
+    if lang.portuguese:
+        return std.text.replace_all(std.text.normalize(text, "NFKD"), "[^\\x00-\\x7F]", "")
+    text
+
+fn polarity_scores(raw: Text, lang: Lang) -> Scores:
+    let text = prepare(raw, lang)
+    let words = tokens(text, lang)
+    let lower = lower_all(words)
+    let cap_diff = caps_differ(words)
+    let sentiments: List[Float] = []
+    for item in words:
+        let i = index_of(words, item)
+        let key = item.to_lowercase()
+        let skip = lang.boosters.contains_key(key) or (not lang.portuguese and key == "kind" and i < size(words) - 1 and lower[i + 1] == "of")
+        if skip:
+            sentiments.push(0.0)
+        else:
+            sentiments.push(word_valence(lang, words, lower, cap_diff, item, i))
+    score_valence(but_check(lang, lower, sentiments), text)
+
+# `language` is "en" (VADER) or "pt" (LeIA).
+fn analyze(text: Text, language: Text) -> Scores:
+    polarity_scores(text, portuguese if language == "pt" else english)

@@ -2,112 +2,82 @@
 
 # Sentiment Analysis API
 
-FastAPI application that performs sentiment analysis on text inputs using NLTK VADER (English) and LeIA (Portuguese).
+Sentiment analysis on text with VADER (English) and LeIA (Portuguese), written in [Telvax](https://github.com/telvax/telvax).
+The service is one program of two files (`src/main.tvx` and `src/analyzer.tvx`) and runs as one binary with the lexicons
+inside it. It started as a FastAPI application; the scores of the two versions are the same (see [Tests](#tests)).
 
 ## Features
 
 - Analyze the sentiment of a single text or multiple texts (EN/PT).
-- Async batch analysis: submit large batches and poll results by job id.
+- Async batch analysis: submit large batches and poll results by job id; with `DATABASE_URL` the jobs survive a restart.
 - Progressive analysis streaming via Server-Sent Events (SSE).
 - Result caching with TTL and admin invalidation endpoint.
 - Rate limiting, security headers and CORS.
-- Observability: Prometheus `/metrics`, structured logging with request ids, Sentry integration.
+- Observability: Prometheus `/metrics`, JSON logs with request ids.
 - Health check and API metadata endpoints.
-- Versioned API under `/v1` with rich OpenAPI documentation.
+- Versioned API under `/v1` with an OpenAPI document generated from the types.
 
 ## Requirements
 
-- Python 3.11 or higher
-- FastAPI, Uvicorn, NLTK (see `config/requirements.txt`)
-
-## Installation
-
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/ntsation/sentiment-analysis-api.git
-   cd sentiment-analysis-api
-   ```
-
-2. Create the virtual environment and install dependencies:
-
-   ```bash
-   make install
-   ```
-
-   Or manually:
-
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r config/requirements.txt
-   ```
+- The `telvax` command, or Docker. See [telvax/telvax](https://github.com/telvax/telvax) to install it.
 
 ## Usage
 
-1. Run the application:
+```bash
+make run          # http://127.0.0.1:8000
+make dev          # text logs
+make test         # the scores against the Python service
+make api-test     # calls every route of a running server
+make build        # one binary: ./sentiment-analysis-api
+```
 
-   ```bash
-   make run
-   ```
-
-   The API will start on `http://127.0.0.1:8000`.
-
-2. For development with auto-reload:
-
-   ```bash
-   make dev
-   ```
+`make run` is `telvax serve src/main.tvx --port 8000 --metrics --log-format json --cors '*' --rate-limit 100/min --security-headers`.
 
 ### Make targets
 
 | Target | Description |
 | --- | --- |
-| `make install` | Creates `.venv` and installs dependencies (runtime + dev) |
 | `make run` | Runs the application |
-| `make dev` | Runs with auto-reload (uvicorn) |
-| `make test` | Runs the test suite |
-| `make coverage` | Runs tests with coverage report |
-| `make lint` | Runs `ruff check .` |
-| `make format` | Runs `ruff format .` |
-| `make typecheck` | Runs `mypy` |
-| `make load-test` | Runs the locust load test UI |
-| `make benchmark` | Runs the cache benchmark (hit vs miss, EN/PT) — requires the server running with `RATE_LIMIT_PER_MINUTE` high |
+| `make dev` | Runs with text logs |
+| `make check` | Type-checks the program |
+| `make test` | Runs the tests |
+| `make format` | Formats `src/` |
+| `make lint` | Format check and lint |
+| `make build` | Makes one binary with the program and the lexicons |
+| `make api-test` | Calls every route of a server that is running |
+| `make load-test` | Runs the Locust load test UI (Locust is installed in `.venv`) |
+| `make benchmark` | Runs the cache benchmark (hit vs miss, EN/PT); the rate limit has to be high |
 | `make docker-build` | Builds the Docker image |
 | `make docker-run` | Runs the Docker container on port 8000 |
-| `make clean` | Removes caches and artifacts |
+| `make clean` | Removes `.venv` and the binary |
 
 ### Configuration
 
-Settings are read from environment variables (or a `.env` file — see `.env.example`):
+The service reads environment variables. The first four are read by every binary made with `telvax build --serve`:
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `HOST` | `0.0.0.0` | Bind host |
-| `PORT` | `8000` | Bind port |
-| `LOG_LEVEL` | `info` | Uvicorn log level |
-| `LOG_FORMAT` | `json` | Log format: `json` or `console` |
-| `WORKERS` | `1` | Uvicorn worker processes |
-| `RATE_LIMIT_PER_MINUTE` | `100` | Requests per minute per client |
-| `CORS_ORIGINS` | `["*"]` | Allowed origins (JSON list) |
+| `PORT` | `8080` (`8000` in the image) | Bind port; `--port` wins |
+| `TELVAX_LOG_FORMAT` | _(none)_ | `json` or `text`: one log line per request, with a request id |
+| `TELVAX_RATE_LIMIT` | _(none)_ | Requests per client address, as `100/min` |
+| `TELVAX_CORS` | _(none)_ | Allowed origins, `*` or a comma-separated list |
+| `TELVAX_METRICS` | _(none)_ | `1` serves `/metrics` |
+| `TELVAX_SECURITY_HEADERS` | _(none)_ | `1` adds the security headers |
 | `ADMIN_TOKEN` | _(empty)_ | When set, `DELETE /v1/cache` requires `X-Admin-Token` |
 | `CACHE_MAXSIZE` | `10000` | Maximum cached sentiment entries |
 | `CACHE_TTL_SECONDS` | `300` | Cache entry TTL |
 | `JOB_STORE_MAXSIZE` | `100` | Maximum in-memory batch jobs kept |
-| `SENTRY_DSN` | _(empty)_ | Enables Sentry error tracking when set |
-| `SENTRY_TRACES_SAMPLE_RATE` | `1.0` | Sentry traces sample rate |
+| `DATABASE_URL` | _(empty)_ | Keeps the batch jobs in PostgreSQL (also needs `TELVAX_LIVE=1`) |
 
-Note: with `WORKERS > 1` each worker keeps its own in-memory cache, job store and
-metrics registry (per-process). Use a single worker or an external shared store if
-global consistency is required.
+Notes:
 
-### Pre-commit hooks
-
-Install the hooks (lint + format on every commit):
-
-```bash
-pre-commit install
-```
+- One process serves all requests, so the cache, the jobs and the counters are shared by all of them; there is no
+  `WORKERS` setting. Run several containers behind a load balancer and use `DATABASE_URL` if jobs must be seen by all.
+- When the cache is full, the entry that goes is the first key in order, not the oldest.
+- An error in the body of a request is a `400` with `{"error": "invalid request", "details": [...]}`; a value the
+  service rejects (a text over 10,000 characters, a language other than `en` or `pt`, more than 100 texts) is a `422`
+  with `{"detail": "..."}`, as the other errors of the service.
 
 ### Docker
 
@@ -122,42 +92,48 @@ Or with docker compose:
 docker compose up --build
 ```
 
+The image builds the program with `ghcr.io/telvax/telvax` and ships only the binary on a distroless base. Its health check
+is `/service --healthcheck /health`.
+
+### Tests
+
+`src/analyzer_test.tvx` has 45 texts (English and Portuguese) with the scores that the Python service gave; they were made
+by running NLTK VADER and the vendored LeIA of the previous version over the texts. A further 800 random sentences
+(lexicon words, negations, capitals, punctuation, accents, emoji) gave the same scores in both versions.
+
+```bash
+make test
+```
+
 ### Load testing
 
-Start the API and run the locust UI (http://localhost:8089):
+Start the API and run the Locust UI (http://localhost:8089):
 
 ```bash
 make run
 make load-test
 ```
 
-Headless example:
-
-```bash
-.venv/bin/locust -f load_tests/locustfile.py --host http://localhost:8000 \
-  --headless -u 50 -r 5 --run-time 30s
-```
-
 ### Benchmark
 
-Cache hit vs cache miss benchmark (results and methodology in
-[`docs/benchmarks/`](docs/benchmarks/)):
+Cache hit vs cache miss benchmark (results and methodology in [`docs/benchmarks/`](docs/benchmarks/)):
 
 ```bash
-RATE_LIMIT_PER_MINUTE=1000000 make run
+telvax serve src/main.tvx --rate-limit 1000000/min
 make benchmark
 ```
 
 ## API Endpoints
 
-Interactive documentation is available at `/docs` (Swagger) and `/redoc`.
+Interactive documentation is available at `/docs`; the OpenAPI document is at `/openapi.json`.
 
 ### Meta
 
 - **GET /** — API metadata (name, version, docs, endpoints list).
 - **GET /health** — Health check.
-- **GET /metrics** — Prometheus metrics (HTTP request counters, latency histogram,
-  sentiment distribution by language, cache hits/misses, batch job counters).
+- **GET /metrics** — Prometheus metrics: requests and latency per route, and the counters of the
+  service as `telvax_counter_total{name="..."}` (`cache_hits`, `cache_misses`,
+  `sentiment_analysis_<language>_<class>`, `batch_jobs_<status>`).
 
 ### Sentiment (`/v1`)
 
@@ -219,21 +195,18 @@ Interactive documentation is available at `/docs` (Swagger) and `/redoc`.
 
 ## CI/CD
 
-- **pipeline_python.yaml** — on every push/PR: `ruff check`, `ruff format --check`,
-  `pytest` with coverage (Python 3.11 and 3.12) and `mypy`.
-- **pipeline_docker.yaml** — on every push/PR: builds the Docker image.
+- **pipeline_telvax.yaml** — on every push/PR: `telvax check`, `fmt --check`, `lint`, the tests, and a container that is
+  built, waits for its health check and is called on every route by `tests/api.sh`.
+- **pipeline_docker.yaml** — on every push/PR: builds the Docker image and scans it.
 
 ## Project structure
 
 ```
 src/
-├── config.py              # Pydantic settings (env-driven)
-├── main.py                # App factory, middlewares, meta routes
-├── middlewares/           # Rate limit, security headers, metrics, request context
-├── models/                # Request/response schemas
-├── observability/         # Prometheus metrics, structlog, Sentry
-├── repositories/          # Analyzer dispatch (VADER/LeIA)
-├── routes/                # /v1 endpoints
-├── services/              # Business logic, cache, job store
-└── vendor/                # Vendored third-party code (LeIA)
+├── main.tvx               # Routes, cache, batch jobs, SSE, settings
+├── analyzer.tvx           # VADER and LeIA
+├── analyzer_test.tvx      # Scores against the Python service
+└── lexicons/              # The lexicons, embedded in the binary
+tests/
+└── api.sh                 # Calls every route of a running server
 ```

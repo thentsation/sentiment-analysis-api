@@ -1,31 +1,29 @@
-FROM python:3.14-slim AS builder
+# The compiler comes from the published image; the result is one binary with the program and the
+# lexicons inside it, on a runtime image that has no shell, no package manager and no Python.
+ARG TELVAX_IMAGE=ghcr.io/telvax/telvax:latest
+FROM ${TELVAX_IMAGE} AS builder
 
 WORKDIR /app
-
-COPY config/requirements.lock ./config/
-
-RUN pip install --no-cache-dir --prefix=/install -r ./config/requirements.lock
-
-FROM python:3.14-slim
-
-WORKDIR /app
-
-RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /install /usr/local
-
-RUN pip install --no-cache-dir --upgrade setuptools
-
-ENV NLTK_DATA=/usr/local/share/nltk_data
-
-RUN python -c "import nltk; nltk.download('vader_lexicon', download_dir='/usr/local/share/nltk_data')"
-
-RUN useradd --create-home appuser
-
-USER appuser
 
 COPY src ./src
 
+RUN mkdir -p /out && telvax build --serve src/main.tvx -o /out/service
+
+FROM gcr.io/distroless/cc-debian12:nonroot
+
+COPY --from=builder /out/service /service
+
+ENV PORT=8000 \
+    TELVAX_METRICS=1 \
+    TELVAX_LOG_FORMAT=json \
+    TELVAX_CORS=* \
+    TELVAX_RATE_LIMIT=100/min \
+    TELVAX_SECURITY_HEADERS=1
+
 EXPOSE 8000
 
-CMD ["python", "src/main.py"]
+HEALTHCHECK --interval=10s --timeout=4s --start-period=10s CMD ["/service", "--healthcheck", "/health"]
+
+USER nonroot
+
+ENTRYPOINT ["/service"]

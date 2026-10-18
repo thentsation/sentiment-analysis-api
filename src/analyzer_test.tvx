@@ -1,0 +1,146 @@
+from analyzer import analyze, Scores
+
+fn close(a: Float, b: Float) -> Bool:
+    std.math.abs(a - b) < 0.00001
+
+fn check(text: Text, pt: Bool, compound: Float, pos: Float, neu: Float, neg: Float):
+    let s = analyze(text, "pt" if pt else "en")
+    assert(close(s.compound, compound))
+    assert(close(s.pos, pos))
+    assert(close(s.neu, neu))
+    assert(close(s.neg, neg))
+
+fn test_golden_00_en():
+    check("I love this!", False, 0.6696, 0.818, 0.182, 0.0)
+
+fn test_golden_01_en():
+    check("I hate this!", False, -0.6114, 0.0, 0.2, 0.8)
+
+fn test_golden_02_en():
+    check("This is not good.", False, -0.3412, 0.0, 0.555, 0.445)
+
+fn test_golden_03_en():
+    check("VERY GOOD day", False, 0.6867, 0.7, 0.3, 0.0)
+
+fn test_golden_04_en():
+    check("The food is good, but the service is terrible.", False, -0.4939, 0.149, 0.534, 0.317)
+
+fn test_golden_05_en():
+    check("It's kind of nice", False, 0.3626, 0.455, 0.545, 0.0)
+
+fn test_golden_06_en():
+    check("never so happy", False, 0.7572, 0.733, 0.267, 0.0)
+
+fn test_golden_07_en():
+    check("Great!!! Really great???", False, 0.8981, 0.908, 0.092, 0.0)
+
+fn test_golden_08_en():
+    check("", False, 0.0, 0.0, 0.0, 0.0)
+
+fn test_golden_09_en():
+    check("meh", False, -0.0772, 0.0, 0.0, 1.0)
+
+fn test_golden_10_en():
+    check("I do not love it, at least it is cheap", False, -0.5216, 0.0, 0.704, 0.296)
+
+fn test_golden_11_en():
+    check("The bomb!", False, -0.5411, 0.0, 0.223, 0.777)
+
+fn test_golden_12_en():
+    check("good good good bad", False, 0.6369, 0.713, 0.0, 0.287)
+
+fn test_golden_13_en():
+    check("WONDERFUL and bad", False, 0.2342, 0.496, 0.112, 0.392)
+
+fn test_golden_14_en():
+    check("Absolutely terrible... but fine", False, 0.3809, 0.464, 0.536, 0.0)
+
+fn test_golden_15_en():
+    check("This isn't bad at all :)", False, 0.705, 0.594, 0.406, 0.0)
+
+fn test_golden_16_en():
+    check("no problem", False, -0.5994, 0.0, 0.0, 1.0)
+
+fn test_golden_17_en():
+    check("a b c", False, 0.0, 0.0, 0.0, 0.0)
+
+fn test_golden_18_en():
+    check("She's the shit", False, -0.5574, 0.0, 0.357, 0.643)
+
+fn test_golden_19_en():
+    check("extremely GOOD", False, 0.6028, 0.797, 0.203, 0.0)
+
+fn test_golden_20_en():
+    check("Happy happy joy joy", False, 0.9432, 1.0, 0.0, 0.0)
+
+fn test_golden_21_en():
+    check("I can't stand it", False, 0.0, 0.0, 1.0, 0.0)
+
+fn test_golden_22_en():
+    check("sort of good", False, 0.4404, 0.592, 0.408, 0.0)
+
+fn test_golden_23_en():
+    check("This is the worst thing ever, truly awful!!!!!!", False, -0.5216, 0.205, 0.423, 0.372)
+
+fn test_golden_24_pt():
+    check("Eu amo isso!", True, 0.0, 0.0, 1.0, 0.0)
+
+fn test_golden_25_pt():
+    check("Eu odeio isso!", True, -0.5411, 0.0, 0.364, 0.636)
+
+fn test_golden_26_pt():
+    check("Isso não é bom.", True, 0.1531, 0.467, 0.167, 0.367)
+
+fn test_golden_27_pt():
+    check("MUITO BOM o dia", True, 0.5473, 0.639, 0.361, 0.0)
+
+fn test_golden_28_pt():
+    check("A comida é boa, mas o atendimento é péssimo.", True, 0.2382, 0.328, 0.672, 0.0)
+
+fn test_golden_29_pt():
+    check("nunca tão feliz", True, 0.659, 0.687, 0.313, 0.0)
+
+fn test_golden_30_pt():
+    check("Ótimo!!! Realmente ótimo???", True, 0.7723, 0.87, 0.13, 0.0)
+
+fn test_golden_31_pt():
+    check("", True, 0.0, 0.0, 0.0, 0.0)
+
+fn test_golden_32_pt():
+    check("meh", True, -0.0772, 0.0, 0.0, 1.0)
+
+fn test_golden_33_pt():
+    check("Não gostei, mas o preço é bom", True, 0.6124, 0.609, 0.217, 0.174)
+
+fn test_golden_34_pt():
+    check("Sem dúvida lindo", True, -0.296, 0.0, 0.476, 0.524)
+
+fn test_golden_35_pt():
+    check("bom bom bom ruim", True, 0.5859, 0.7, 0.0, 0.3)
+
+fn test_golden_36_pt():
+    check("Que dia maravilhoso 😀", True, 0.5719, 0.649, 0.351, 0.0)
+
+fn test_golden_37_pt():
+    check("Isso é horrível... porém aceitável", True, -0.2732, 0.313, 0.241, 0.446)
+
+fn test_golden_38_pt():
+    check("extremamente BOM", True, 0.5894, 0.793, 0.207, 0.0)
+
+fn test_golden_39_pt():
+    check("não é ruim", True, -0.7003, 0.0, 0.0, 1.0)
+
+fn test_golden_40_pt():
+    check("nunca este bom", True, 0.5023, 0.619, 0.381, 0.0)
+
+fn test_golden_41_pt():
+    check("entretanto o produto é ótimo", True, 0.3612, 0.556, 0.444, 0.0)
+
+fn test_golden_42_pt():
+    check("Adorei o produto, entrega rápida e atendimento excelente!", True, 0.6588, 0.468, 0.532, 0.0)
+
+fn test_golden_43_pt():
+    check("Péssimo, terrível, nunca mais compro", True, -0.4767, 0.0, 0.563, 0.437)
+
+fn test_golden_44_pt():
+    check("ok", True, 0.2263, 1.0, 0.0, 0.0)

@@ -17,7 +17,7 @@ Data: 2026-08-20
 Reprodução:
 
 ```bash
-RATE_LIMIT_PER_MINUTE=1000000 make run
+telvax serve src/main.tvx --rate-limit 1000000/min
 make benchmark
 ```
 

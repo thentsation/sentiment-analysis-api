@@ -1,0 +1,403 @@
+# Sentiment Analysis API: VADER for English, LeIA for Portuguese, with a cache, asynchronous
+# batch jobs, Server-Sent Events and the same routes as the Python service.
+#
+# Run: telvax serve main.tvx --port 8000 --metrics --log-format json --cors "*" \
+#          --rate-limit 100/min --security-headers
+
+import std.http.Request
+import std.http.Response
+import std.http.Sink
+import std.http.Status
+import std.db.postgres.PostgresClient
+
+from analyzer import analyze, Scores
+
+let max_text_length: u64 = 10000
+let max_texts: u64 = 100
+
+# Settings come from the environment, with the defaults of the Python service.
+fn setting(name: Text, default: Text) -> Text:
+    std.env.get(name).unwrap_or(default)
+
+fn int_setting(name: Text, default: Int) -> Int:
+    setting(name, "").to_int().unwrap_or(default)
+
+let version = setting("VERSION", "1.0.0")
+let admin_token = setting("ADMIN_TOKEN", "")
+let cache_maxsize = int_setting("CACHE_MAXSIZE", 10000)
+let cache_ttl_seconds = std.math.to_float(int_setting("CACHE_TTL_SECONDS", 300))
+let job_store_maxsize = int_setting("JOB_STORE_MAXSIZE", 100)
+
+# --- Request and answer types -------------------------------------------------------------
+
+type TextRequest:
+    text: Text
+    language: Text = "en"
+
+type MultiTextRequest:
+    texts: List[Text]
+    language: Text = "en"
+
+type AnalyzeResponse:
+    text: Text
+    language: Text
+    sentiment: Scores
+
+type AnalyzeMultipleResponse:
+    results: Map[Text, Scores]
+
+type SentimentClassesResponse:
+    classes: Map[Text, Text]
+
+type SentimentStatistics:
+    positive: Int
+    neutral: Int
+    negative: Int
+
+type StatisticsResponse:
+    statistics: SentimentStatistics
+
+type RootResponse:
+    name: Text
+    version: Text
+    docs: Text
+    health: Text
+    metrics: Text
+    endpoints: List[Text]
+
+type HealthResponse:
+    status: Text
+
+type CacheInvalidationResponse:
+    status: Text
+    cleared: Int
+
+type BatchAcceptedResponse:
+    job_id: Text
+    status: Text
+    total: Int
+    results_url: Text
+
+type JobResultResponse:
+    job_id: Text
+    status: Text
+    total: Int
+    processed: Int
+    language: Text
+    results: Map[Text, Scores]?
+
+type StreamItem:
+    text: Text
+    sentiment: Scores
+
+type Detail:
+    detail: Text
+
+# The error answers have the body of the Python service: {"detail": "..."}.
+fn failure(code: Int, message: Text) -> Response:
+    Response.new(Detail(detail: message)).status(code)
+
+fn invalid_text(text: Text) -> Text?:
+    if text.chars().len() > max_text_length:
+        return Some(f"text is longer than {max_text_length} characters")
+    None
+
+fn invalid_language(language: Text) -> Text?:
+    if language != "en" and language != "pt":
+        return Some("language must be 'en' or 'pt'")
+    None
+
+# The first problem of a list of texts, as the answer to give: 400 for an empty list (like the
+# Python service) and 422 for one that does not fit the limits.
+fn check_texts(texts: List[Text], language: Text) -> Response?:
+    if texts.is_empty():
+        return Some(failure(400, "No texts provided"))
+    if texts.len() > max_texts:
+        return Some(failure(422, f"texts has more than {max_texts} items"))
+    for text in texts:
+        if invalid_text(text) is Some(message):
+            return Some(failure(422, message))
+    if invalid_language(language) is Some(message):
+        return Some(failure(422, message))
+    None
+
+# --- Sentiment service and its cache ------------------------------------------------------
+
+let sentiment_classes: Map[Text, Text] = {
+    "positive": "Scores greater than 0.05",
+    "neutral": "Scores between -0.05 and 0.05",
+    "negative": "Scores less than -0.05",
+}
+
+let cached: Map[Text, Scores] = {}
+let cached_at: Map[Text, Float] = {}
+
+fn classify(compound: Float) -> Text:
+    if compound > 0.05:
+        return "positive"
+    if compound < -0.05:
+        return "negative"
+    "neutral"
+
+fn cache_key(text: Text, language: Text) -> Text:
+    language + ":" + text
+
+fn cache_get(text: Text, language: Text) -> Scores?:
+    let key = cache_key(text, language)
+    match cached_at.get(key):
+        case None:
+            std.metrics.count("cache_misses")
+            None
+        case Some(at):
+            if std.time.now() - at >= cache_ttl_seconds:
+                cached.remove(key)
+                cached_at.remove(key)
+                std.metrics.count("cache_misses")
+                return None
+            std.metrics.count("cache_hits")
+            cached.get(key)
+
+# A map keeps its keys in order, not the order they came in, so when the cache is full the entry that
+# goes is the first key, not the oldest.
+fn cache_set(text: Text, language: Text, scores: Scores):
+    if std.math.to_int(cached.len()) >= cache_maxsize:
+        if cached.keys().first() is Some(first):
+            cached.remove(first)
+            cached_at.remove(first)
+    let key = cache_key(text, language)
+    cached.insert(key, scores)
+    cached_at.insert(key, std.time.now())
+
+fn analyze_sentiment(text: Text, language: Text) -> Scores:
+    if cache_get(text, language) is Some(hit):
+        return hit
+    let scores = analyze(text, language)
+    std.metrics.count(f"sentiment_analysis_{language}_{classify(scores.compound)}")
+    cache_set(text, language, scores)
+    scores
+
+# --- Routes -------------------------------------------------------------------------------
+
+@endpoint(GET, "/")
+fn root() -> Result[RootResponse, Status]:
+    Ok(RootResponse(
+        name: "Sentiment Analysis API",
+        version: version,
+        docs: "/docs",
+        health: "/health",
+        metrics: "/metrics",
+        endpoints: [
+            "/v1/analyze",
+            "/v1/analyze_batch",
+            "/v1/analyze_multiple",
+            "/v1/analyze_statistics",
+            "/v1/analyze_stream",
+            "/v1/cache",
+            "/v1/results/{job_id}",
+            "/v1/sentiment_classes",
+        ],
+    ))
+
+@endpoint(GET, "/health")
+fn health() -> Result[HealthResponse, Status]:
+    Ok(HealthResponse(status: "ok"))
+
+@endpoint(POST, "/v1/analyze")
+fn analyze_one(input: TextRequest) -> Result[Response, Status]:
+    if input.text.is_empty():
+        return Ok(failure(400, "No text provided"))
+    if invalid_text(input.text) is Some(message):
+        return Ok(failure(422, message))
+    if invalid_language(input.language) is Some(message):
+        return Ok(failure(422, message))
+    let scores = analyze_sentiment(input.text, input.language)
+    Ok(Response.new(AnalyzeResponse(text: input.text, language: input.language, sentiment: scores)))
+
+@endpoint(POST, "/v1/analyze_multiple")
+fn analyze_multiple(input: MultiTextRequest) -> Result[Response, Status]:
+    if check_texts(input.texts, input.language) is Some(rejected):
+        return Ok(rejected)
+    let results: Map[Text, Scores] = std.map.new()
+    for text in input.texts:
+        results.insert(text, analyze_sentiment(text, input.language))
+    Ok(Response.new(AnalyzeMultipleResponse(results: results)))
+
+@endpoint(GET, "/v1/sentiment_classes")
+fn sentiment_classes() -> Result[SentimentClassesResponse, Status]:
+    Ok(SentimentClassesResponse(classes: sentiment_classes))
+
+@endpoint(POST, "/v1/analyze_statistics")
+fn analyze_statistics(input: MultiTextRequest) -> Result[Response, Status]:
+    if check_texts(input.texts, input.language) is Some(rejected):
+        return Ok(rejected)
+    var positive = 0
+    var neutral = 0
+    var negative = 0
+    for text in input.texts:
+        let kind = classify(analyze_sentiment(text, input.language).compound)
+        if kind == "positive":
+            positive += 1
+        elif kind == "negative":
+            negative += 1
+        else:
+            neutral += 1
+    Ok(Response.new(StatisticsResponse(statistics: SentimentStatistics(positive: positive, neutral: neutral, negative: negative))))
+
+@endpoint(DELETE, "/v1/cache")
+fn invalidate_cache(req: Request) -> Result[Response, Status]:
+    if admin_token != "" and req.header("x-admin-token") != Some(admin_token):
+        return Ok(failure(401, "Invalid admin token"))
+    let cleared = cached.len()
+    for key in cached.keys():
+        cached.remove(key)
+        cached_at.remove(key)
+    Ok(Response.new(CacheInvalidationResponse(status: "cache invalidated", cleared: std.math.to_int(cleared))))
+
+# --- Batch jobs ---------------------------------------------------------------------------
+#
+# The jobs live in memory; with database_url set, every change is also written to PostgreSQL and a
+# job the process no longer holds (after a restart, or pushed out of the store) is read from there.
+
+let job_language: Map[Text, Text] = {}
+let job_total: Map[Text, Int] = {}
+let job_status: Map[Text, Text] = {}
+let job_processed: Map[Text, Int] = {}
+let job_results: Map[Text, Map[Text, Scores]] = {}
+let job_order: Map[Int, Text] = {}
+let job_seq: Map[Text, Int] = {}
+
+type JobRow:
+    id: Text
+    language: Text
+    total: Int
+    processed: Int
+    status: Text
+    results: Text
+
+let database_url = setting("DATABASE_URL", "")
+let db = PostgresClient.connect(database_url)
+
+fn persistent() -> Bool:
+    not database_url.is_empty()
+
+fn persist[P](sql: Text, params: P):
+    if persistent():
+        match db.execute(sql, params):
+            case Ok(_):
+                pass
+            case Err(message):
+                print(f"postgres: {message}")
+
+# The table is made by the first request that needs it: a program has no code that runs at start.
+let db_ready: Map[Text, Bool] = {}
+
+fn init_db():
+    if db_ready.contains_key("table"):
+        return
+    db_ready.insert("table", True)
+    persist("CREATE TABLE IF NOT EXISTS sentiment_jobs (id TEXT PRIMARY KEY, language TEXT NOT NULL, total INTEGER NOT NULL, processed INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'pending', results JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT now())", [])
+
+fn forget_oldest():
+    while std.math.to_int(job_order.len()) > job_store_maxsize:
+        if job_order.keys().first() is Some(seq):
+            if job_order.remove(seq) is Some(id):
+                job_language.remove(id)
+                job_total.remove(id)
+                job_status.remove(id)
+                job_processed.remove(id)
+                job_results.remove(id)
+                job_seq.remove(id)
+
+fn remember(id: Text, language: Text, total: Int, processed: Int, status: Text, results: Map[Text, Scores]):
+    let seq = std.math.to_int(std.time.now() * 1000000.0)
+    job_language.insert(id, language)
+    job_total.insert(id, total)
+    job_status.insert(id, status)
+    job_processed.insert(id, processed)
+    job_results.insert(id, results)
+    job_seq.insert(id, seq)
+    job_order.insert(seq, id)
+    forget_oldest()
+
+# Brings a job that is only in PostgreSQL back into memory.
+fn load_job(id: Text) -> Bool:
+    if not persistent():
+        return False
+    init_db()
+    let sql = "SELECT id, language, total, processed, status, results::text AS results FROM sentiment_jobs WHERE id = $1"
+    let found: Result[List[JobRow], Text] = db.query(sql, [id])
+    match found:
+        case Err(message):
+            print(f"postgres: {message}")
+            False
+        case Ok(rows):
+            match rows.first():
+                case None:
+                    False
+                case Some(row):
+                    let parsed: Result[Map[Text, Scores], Text] = std.json.parse(row.results)
+                    remember(row.id, row.language, row.total, row.processed, row.status, parsed.unwrap_or(std.map.new()))
+                    True
+
+fn known(id: Text) -> Bool:
+    job_status.contains_key(id) or load_job(id)
+
+fn set_status(id: Text, status: Text):
+    job_status.insert(id, status)
+    persist("UPDATE sentiment_jobs SET status = $1 WHERE id = $2", (status, id))
+
+fn finish(id: Text, status: Text):
+    set_status(id, status)
+    std.metrics.count(f"batch_jobs_{status}")
+
+async fn process_job(id: Text, texts: List[Text], language: Text):
+    set_status(id, "processing")
+    for text in texts:
+        let scores = analyze_sentiment(text, language)
+        if job_results.get(id) is Some(results):
+            results.insert(text, scores)
+        let processed = job_processed.get(id).unwrap_or(0) + 1
+        job_processed.insert(id, processed)
+        persist("UPDATE sentiment_jobs SET results = results || $1::jsonb, processed = $2 WHERE id = $3", (std.json.stringify(std.map.from_entries([(text, scores)])), processed, id))
+    finish(id, "completed")
+
+@endpoint(POST, "/v1/analyze_batch")
+fn submit_batch(input: MultiTextRequest) -> Result[Response, Status]:
+    if check_texts(input.texts, input.language) is Some(rejected):
+        return Ok(rejected)
+    let id = std.random.uuid()
+    let total = std.math.to_int(input.texts.len())
+    let empty: Map[Text, Scores] = std.map.new()
+    remember(id, input.language, total, 0, "pending", empty)
+    init_db()
+    persist("INSERT INTO sentiment_jobs (id, language, total) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING", (id, input.language, total))
+    std.metrics.count("batch_jobs_accepted")
+    std.task.spawn(process_job(id, input.texts, input.language))
+    Ok(Response.new(BatchAcceptedResponse(job_id: id, status: "pending", total: total, results_url: "/v1/results/" + id)).status(202))
+
+@endpoint(GET, "/v1/results/{job_id}")
+fn get_results(job_id: Text) -> Result[Response, Status]:
+    if not known(job_id):
+        return Ok(failure(404, "Job not found"))
+    let results = job_results.get(job_id)
+    let shown: Map[Text, Scores]? = results.filter(r => not r.is_empty())
+    Ok(Response.new(JobResultResponse(
+        job_id: job_id,
+        status: job_status.get(job_id).unwrap_or("pending"),
+        total: job_total.get(job_id).unwrap_or(0),
+        processed: job_processed.get(job_id).unwrap_or(0),
+        language: job_language.get(job_id).unwrap_or("en"),
+        results: shown,
+    )))
+
+# --- Server-Sent Events -------------------------------------------------------------------
+
+@endpoint(POST, "/v1/analyze_stream")
+fn analyze_stream(input: MultiTextRequest) -> Result[Response, Status]:
+    if check_texts(input.texts, input.language) is Some(rejected):
+        return Ok(rejected)
+    fn produce(sink: Sink):
+        for text in input.texts:
+            sink.send(StreamItem(text: text, sentiment: analyze_sentiment(text, input.language)))
+        sink.event("done", "{}")
+    Ok(Response.events(produce).header("cache-control", "no-cache"))

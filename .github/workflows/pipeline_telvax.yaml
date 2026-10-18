@@ -1,0 +1,62 @@
+name: Telvax CI
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TELVAX_IMAGE: ghcr.io/telvax/telvax:latest
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Check, format and lint
+        run: |
+          telvax() { docker run --rm -v "$PWD:/work" -w /work "$TELVAX_IMAGE" "$@"; }
+          telvax check src/main.tvx
+          telvax fmt --check src
+          telvax lint src/main.tvx
+          telvax lint src/analyzer.tvx
+
+      - name: Tests (scores against the Python service)
+        run: docker run --rm -v "$PWD:/work" -w /work "$TELVAX_IMAGE" test src
+
+  api:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Build the image
+        run: docker build -t sentiment:ci -f docker/Dockerfile .
+
+      - name: Start the container
+        run: docker run -d --name sentiment -p 8000:8000 sentiment:ci
+
+      - name: Wait for the health check
+        run: |
+          for i in $(seq 1 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' sentiment)" = healthy ] && exit 0
+            sleep 2
+          done
+          docker logs sentiment
+          exit 1
+
+      - name: Call every route
+        run: tests/api.sh http://127.0.0.1:8000
