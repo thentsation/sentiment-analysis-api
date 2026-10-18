@@ -55,3 +55,31 @@ Size and effort: the Telvax program is 789 lines (both analyzers included) again
 vendored LeIA and the NLTK package; one 69 MB binary against 9 direct dependencies (32 locked packages, 52 MB of
 site-packages). The Python tests are 781 lines (unit tests of cache, job store and middleware, 90% coverage gate); the
 Telvax tests are the 45 fixed texts and `tests/api.sh`, so the unit coverage of the cache and the job store is lower.
+
+## Third run, after optimizing the interpreter
+
+The Telvax numbers above are from the first version of the program on the first version of the interpreter, and in one
+scenario (100 texts per request) it was behind Python. This run uses the changes of telvax/telvax#166 and a tokenizer
+that makes one regular-expression call per word instead of one per character. Each cell is the median of three `ab` runs
+(Python 3.12, 10 cores, no keep-alive); the scores of the 45 fixed texts and of 800 random sentences are unchanged.
+
+| Scenario | Python 1 worker | Python 10 workers | Telvax | Telvax vs best Python |
+| --- | --- | --- | --- | --- |
+| Cache miss EN, 20 connections | 1,172 req/s | 3,153 | 36,629 | 11.6x |
+| Cache miss PT, 20 connections | 1,171 | 2,690 | 36,681 | 13.6x |
+| 100 texts per request, 1 connection | 227 | 209 | 282 | 1.24x |
+| 100 texts per request, 10 connections | 259 | 978 | 1,269 | 1.30x |
+| Cache hit EN, 1 connection | 741 | 658 | 14,404 | 19.4x |
+| Cache hit EN, 20 connections | 1,263 | 3,312 | 50,847 | 15.4x |
+| Cache hit EN, 100 connections | 1,192 | 3,700 | 46,711 | 12.6x |
+
+Latency at 20 connections on a cache miss: p50 16 ms and p99 28 ms for Python with one worker, 6 ms and 23 ms with ten,
+1 ms and 1 ms for Telvax. With 100 texts per request and 10 connections: Python 38 / 48 ms (1 worker), 9 / 21 ms
+(10 workers); Telvax 7 / 12 ms.
+
+What changed in the program: the tokenizer, which was 60% of the time, now calls one pattern per word; the index of a
+repeated word comes from a map instead of a scan of the list. What changed in the interpreter is in the telvax/telvax#166
+description.
+
+The margin on 100 texts per request is the thinnest, 24% to 30%; that is the scenario where scoring, not the web layer,
+decides, and the Telvax scorer is still an interpreter running about as fast as the Python one on a single thread.

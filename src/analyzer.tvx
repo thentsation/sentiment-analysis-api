@@ -28,9 +28,6 @@ let en_idioms: Map[Text, Float] = {
     "hand to mouth": -2.0,
 }
 
-let en_punc = [".", "!", "?", ",", ";", ":", "-", "'", "\"", "!!", "!!!", "??", "???", "?!?", "!?!", "?!?!", "!?!?"]
-let pt_punc = [".", "!", "?", ",", ";", ":", "-", "'", "\"", "...", "!?", "?!", "!!", "!!!", "??", "???", "?!?", "!?!", "?!?!", "!?!?"]
-
 fn load_lexicon(content: Text) -> Map[Text, Float]:
     let words: Map[Text, Float] = std.map.new()
     for line in content.lines():
@@ -74,48 +71,15 @@ let portuguese = Lang(
 fn is_upper(word: Text) -> Bool:
     word.to_uppercase() == word and word.to_lowercase() != word
 
-fn char_len(word: Text) -> Int:
-    std.math.to_int(word.chars().len())
-
-fn is_punct_char(c: Text) -> Bool:
-    std.text.matches(c, "^[!-/:-@\\[-`{-~]$")
-
-# Python's `text.split()`.
-fn split_words(text: Text) -> List[Text]:
-    let one = std.text.replace_all(text, "\\s+", " ").trim()
-    if one.is_empty():
-        return []
-    one.split(" ")
-
-# The words of the text with the punctuation around each one taken off, as SentiText does:
-# `great!` and `!great` are `great`, but `!great!` and `a.b` stay as they are.
-fn strip_punct(token: Text, punc: List[Text]) -> Text:
-    let cs = token.chars()
-    var lead = 0
-    while lead < cs.len() and is_punct_char(cs[lead]):
-        lead += 1
-    var tail = 0
-    while tail < cs.len() - lead and is_punct_char(cs[cs.len() - 1 - tail]):
-        tail += 1
-    let inner = cs.len() - lead - tail
-    if inner < 2:
-        return token
-    var has_inner_punct = False
-    for k in range(lead, lead + inner):
-        if is_punct_char(cs[k]):
-            has_inner_punct = True
-    if has_inner_punct:
-        return token
-    let word = cs.slice(lead, lead + inner).join("")
-    if lead > 0 and tail == 0 and punc.contains(cs.slice(0, lead).join("")):
-        return word
-    if tail > 0 and lead == 0 and punc.contains(cs.slice(lead + inner, cs.len()).join("")):
-        return word
-    token
+# `great!` and `!great` are `great`; `!great!` and `a.b` stay as they are. The punctuation that may be
+# taken off is the list of PUNC_LIST in VADER (LeIA adds three more), and what is left has to be two
+# characters or more with no punctuation inside. One pattern per language does it in a single call.
+let en_strip = "^(?:\\.|!|\\?|,|;|:|-|'|\"|!!|!!!|\\?\\?|\\?\\?\\?|\\?!\\?|!\\?!|\\?!\\?!|!\\?!\\?)([^!-/:-@\\[-`{-~\\s]{2,})$|^([^!-/:-@\\[-`{-~\\s]{2,})(?:\\.|!|\\?|,|;|:|-|'|\"|!!|!!!|\\?\\?|\\?\\?\\?|\\?!\\?|!\\?!|\\?!\\?!|!\\?!\\?)$"
+let pt_strip = "^(?:\\.|!|\\?|,|;|:|-|'|\"|\\.\\.\\.|!\\?|\\?!|!!|!!!|\\?\\?|\\?\\?\\?|\\?!\\?|!\\?!|\\?!\\?!|!\\?!\\?)([^!-/:-@\\[-`{-~\\s]{2,})$|^([^!-/:-@\\[-`{-~\\s]{2,})(?:\\.|!|\\?|,|;|:|-|'|\"|\\.\\.\\.|!\\?|\\?!|!!|!!!|\\?\\?|\\?\\?\\?|\\?!\\?|!\\?!|\\?!\\?!|!\\?!\\?)$"
 
 fn tokens(text: Text, lang: Lang) -> List[Text]:
-    let punc = pt_punc if lang.portuguese else en_punc
-    split_words(text).filter(t => char_len(t) > 1).map(t => strip_punct(t, punc))
+    let strip = pt_strip if lang.portuguese else en_strip
+    std.text.find_all(text, "\\S{2,}").map(t => std.text.replace_all(t, strip, "$1$2"))
 
 fn size(xs: List[Text]) -> Int:
     std.math.to_int(xs.len())
@@ -371,10 +335,18 @@ fn polarity_scores(raw: Text, lang: Lang) -> Scores:
     let lower = lower_all(words)
     let cap_diff = caps_differ(words)
     let sentiments: List[Float] = []
-    for item in words:
-        let i = index_of(words, item)
-        let key = item.to_lowercase()
-        let skip = lang.boosters.contains_key(key) or (not lang.portuguese and key == "kind" and i < size(words) - 1 and lower[i + 1] == "of")
+    let n = size(words)
+    # Python finds the index of a word with `list.index`, so a word that is repeated takes the
+    # place of its first appearance.
+    let first: Map[Text, Int] = std.map.new()
+    for p, item in words.enumerate():
+        var i = std.math.to_int(p)
+        if first.get(item) is Some(earlier):
+            i = earlier
+        else:
+            first.insert(item, i)
+        let key = lower[i]
+        let skip = lang.boosters.contains_key(key) or (not lang.portuguese and key == "kind" and i < n - 1 and lower[i + 1] == "of")
         if skip:
             sentiments.push(0.0)
         else:
