@@ -102,6 +102,4 @@ the job store), `tests/api.sh` passes 28 checks, and 800 random sentences still 
 | Cache hit EN, 100 connections | 1,236 | 4,628 | 49,382 | 10.7x | 46,711 |
 
 Telvax is ahead in every scenario. The scenario with the least room is the same as before, 100 texts per request: the work
-there is the scorer itself, an interpreter that runs about as fast as CPython on one thread and uses the cores better. The
-gains over the third run (up to 20% for single texts, 7% for the batch) come from the cache, which no longer takes a global
-lock per entry, and from the counters, which no longer build a name by hand.
+there is the scorer itself, an interpreter that runs about as fast as CPython on one thread and uses the cores better. gains over the third run (up to 20% for single texts, 7% for the batch) were not traced to a cause; a run-to-run variation of that size is possible on one machine.
