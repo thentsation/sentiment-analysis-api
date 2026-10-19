@@ -56,7 +56,9 @@ fn analyze_statistics(input: MultiTextRequest) -> Result[Response, Status]:
 fn invalidate_cache(req: Request) -> Result[Response, Status]:
     if admin_token != "" and req.header("x-admin-token") != Some(admin_token):
         return Ok(failure(401, "Invalid admin token"))
-    Ok(Response.new(CacheInvalidationResponse(status: "cache invalidated", cleared: cache_clear())))
+    let cleared = cache_clear()
+    std.log.info("cache invalidated", {"cleared": f"{cleared}"})
+    Ok(Response.new(CacheInvalidationResponse(status: "cache invalidated", cleared: cleared)))
 
 @endpoint(POST, "/v1/analyze_batch")
 fn submit_batch(input: MultiTextRequest) -> Result[Response, Status]:
@@ -66,7 +68,8 @@ fn submit_batch(input: MultiTextRequest) -> Result[Response, Status]:
     let total = std.math.to_int(input.texts.len())
     create(id, input.language, total)
     # If the task fails, the job is marked as failed instead of staying in `processing`.
-    fn failed(_message: Text):
+    fn failed(message: Text):
+        std.log.error("batch job failed", {"job_id": id, "message": message})
         finish(id, "failed")
     std.task.spawn(process_job(id, input.texts, input.language), failed)
     Ok(Response.new(BatchAcceptedResponse(job_id: id, status: "pending", total: total, results_url: "/v1/results/" + id)).status(202))

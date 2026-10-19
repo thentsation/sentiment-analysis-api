@@ -54,16 +54,19 @@ security headers, `detail` errors) are in the `serve:` block at the top of `src/
 
 ### Configuration
 
-The service reads environment variables. `HOST`, `PORT` and the `TELVAX_*` variables are read by every binary made with `telvax build --serve`. The `TELVAX_*`
-ones override the `serve:` block of `src/main.tvx`; the defaults below are what the block sets:
+The service reads environment variables. `HOST`, `PORT` and the `TELVAX_*` variables are read by every binary made with `telvax build --serve`.
+The `serve:` block of `src/main.tvx` reads `LOG_FORMAT`, `LOG_LEVEL`, `CORS_ORIGINS` and `RATE_LIMIT` with `env(...)`; a `TELVAX_*` variable
+(`TELVAX_LOG_FORMAT`, `TELVAX_LOG_LEVEL`, `TELVAX_CORS`, `TELVAX_RATE_LIMIT`, `TELVAX_METRICS`, `TELVAX_SECURITY_HEADERS`) or a flag overrides them.
+The defaults below are what the block sets:
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `HOST` | `0.0.0.0` | Bind host |
 | `PORT` | `8080` (`8000` in the image) | Bind port; `--port` wins |
-| `TELVAX_LOG_FORMAT` | `json` | `json` or `text`: one log line per request, with a request id |
-| `TELVAX_RATE_LIMIT` | `100/min` | Requests per client address, as `100/min` |
-| `TELVAX_CORS` | `*` | Allowed origins, `*` or a comma-separated list |
+| `LOG_FORMAT` | `json` | `json` or `text`: one log line per request, with a request id (the Python service's `console` is `text`) |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`: the lowest level written, for the request lines (`info` under 400, `warn` for 4xx, `error` for 5xx) and the lines of the service |
+| `RATE_LIMIT` | `100/min` | Requests per client address, as `100/min` (it replaces `RATE_LIMIT_PER_MINUTE`) |
+| `CORS_ORIGINS` | `*` | Allowed origins, `*` or a comma-separated list (not a JSON list) |
 | `TELVAX_METRICS` | `1` | `1` serves `/metrics` |
 | `TELVAX_SECURITY_HEADERS` | `1` | `1` adds the security headers |
 | `ADMIN_TOKEN` | _(empty)_ | When set, `DELETE /v1/cache` requires `X-Admin-Token` |
@@ -76,10 +79,13 @@ Notes:
 
 - One process serves all requests, so the cache, the jobs and the counters are shared by all of them; there is no
   `WORKERS` setting. Run several containers behind a load balancer and use `DATABASE_URL` if jobs must be seen by all.
-- When the cache is full, the entry that goes is the first key in order, not the oldest.
-- An error in the body of a request is a `400` with `{"error": "invalid request", "details": [...]}`; a value the
-  service rejects (a text over 10,000 characters, a language other than `en` or `pt`, more than 100 texts) is a `422`
-  with `{"detail": "..."}`, as the other errors of the service.
+- When the cache is full, the entry that was used least recently goes.
+- A body that does not fit its type, or a value the service rejects (a text over 10,000 characters, a language other
+  than `en` or `pt`, more than 100 texts), is a `422` with `{"detail": ...}`; an empty text or list is a `400` with
+  `{"detail": "No text provided"}`.
+- The table of the batch jobs is made once, before the server listens (`on_start` in `src/main.tvx`), so a wrong
+  `DATABASE_URL` shows in the log at the start and not in the first batch.
+- The service writes its own lines with `std.log` (a failed job, a cache invalidation, a failed statement), in the format and at the level of the request lines.
 
 ### Docker
 

@@ -54,16 +54,19 @@ headers de segurança, erros `detail`) estão no bloco `serve:` no topo de `src/
 
 ### Configuração
 
-O serviço lê variáveis de ambiente. `HOST`, `PORT` e as variáveis `TELVAX_*` são lidas por todo binário feito com `telvax build --serve`. As `TELVAX_*`
-sobrescrevem o bloco `serve:` de `src/main.tvx`; os padrões abaixo são o que o bloco define:
+O serviço lê variáveis de ambiente. `HOST`, `PORT` e as variáveis `TELVAX_*` são lidas por todo binário feito com `telvax build --serve`.
+O bloco `serve:` de `src/main.tvx` lê `LOG_FORMAT`, `LOG_LEVEL`, `CORS_ORIGINS` e `RATE_LIMIT` com `env(...)`; uma variável `TELVAX_*`
+(`TELVAX_LOG_FORMAT`, `TELVAX_LOG_LEVEL`, `TELVAX_CORS`, `TELVAX_RATE_LIMIT`, `TELVAX_METRICS`, `TELVAX_SECURITY_HEADERS`) ou uma flag as sobrescreve.
+Os padrões abaixo são o que o bloco define:
 
 | Variável | Padrão | Descrição |
 | --- | --- | --- |
 | `HOST` | `0.0.0.0` | Host de bind |
 | `PORT` | `8080` (`8000` na imagem) | Porta de bind; `--port` tem prioridade |
-| `TELVAX_LOG_FORMAT` | `json` | `json` ou `text`: uma linha de log por requisição, com request id |
-| `TELVAX_RATE_LIMIT` | `100/min` | Requisições por endereço de cliente, como `100/min` |
-| `TELVAX_CORS` | `*` | Origens permitidas, `*` ou lista separada por vírgulas |
+| `LOG_FORMAT` | `json` | `json` ou `text`: uma linha de log por requisição, com request id (o `console` do serviço Python é `text`) |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn` ou `error`: o menor nível escrito, nas linhas de requisição (`info` abaixo de 400, `warn` para 4xx, `error` para 5xx) e nas linhas do serviço |
+| `RATE_LIMIT` | `100/min` | Requisições por endereço de cliente, como `100/min` (substitui `RATE_LIMIT_PER_MINUTE`) |
+| `CORS_ORIGINS` | `*` | Origens permitidas, `*` ou lista separada por vírgulas (não uma lista JSON) |
 | `TELVAX_METRICS` | `1` | `1` serve `/metrics` |
 | `TELVAX_SECURITY_HEADERS` | `1` | `1` adiciona os headers de segurança |
 | `ADMIN_TOKEN` | _(vazio)_ | Quando definido, `DELETE /v1/cache` exige `X-Admin-Token` |
@@ -76,10 +79,13 @@ Observações:
 
 - Um processo atende todas as requisições, então cache, jobs e contadores são compartilhados; não existe `WORKERS`.
   Rode vários containers atrás de um balanceador e use `DATABASE_URL` se os jobs precisarem ser vistos por todos.
-- Quando o cache enche, sai a primeira chave em ordem, não a mais antiga.
-- Um erro no corpo da requisição é um `400` com `{"error": "invalid request", "details": [...]}`; um valor que o serviço
-  rejeita (texto com mais de 10.000 caracteres, idioma diferente de `en` e `pt`, mais de 100 textos) é um `422` com
-  `{"detail": "..."}`, como os outros erros do serviço.
+- Quando o cache enche, sai a entrada usada há mais tempo.
+- Um corpo que não cabe no tipo, ou um valor que o serviço rejeita (texto com mais de 10.000 caracteres, idioma diferente
+  de `en` e `pt`, mais de 100 textos), é um `422` com `{"detail": ...}`; um texto ou lista vazia é um `400` com
+  `{"detail": "No text provided"}`.
+- A tabela dos jobs de lote é feita uma vez, antes de o servidor ouvir (`on_start` em `src/main.tvx`), então um
+  `DATABASE_URL` errado aparece no log na partida e não no primeiro lote.
+- O serviço escreve as próprias linhas com `std.log` (job que falhou, cache invalidado, comando que falhou), no formato e no nível das linhas de requisição.
 
 ### Docker
 
