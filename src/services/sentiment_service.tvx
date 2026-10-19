@@ -1,0 +1,25 @@
+# Sentiment of a text, through the cache.
+from repositories.sentiment_repository import analyze_sentiment as compute
+from services.cache_service import cache_get, cache_set
+from vendor.leia.leia import Scores
+
+let sentiment_classes: Map[Text, Text] = {
+    "positive": "Scores greater than 0.05",
+    "neutral": "Scores between -0.05 and 0.05",
+    "negative": "Scores less than -0.05",
+}
+
+fn classify(compound: Float) -> Text:
+    if compound > 0.05:
+        return "positive"
+    if compound < -0.05:
+        return "negative"
+    "neutral"
+
+fn analyze_sentiment(text: Text, language: Text) -> Scores:
+    if cache_get(text, language) is Some(hit):
+        return hit
+    let scores = compute(text, language)
+    std.metrics.count("sentiment_analysis_total", {"language": language, "sentiment": classify(scores.compound)})
+    cache_set(text, language, scores)
+    scores

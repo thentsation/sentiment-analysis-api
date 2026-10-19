@@ -1,0 +1,74 @@
+# The batch jobs live in memory; with DATABASE_URL set, every change is also written to PostgreSQL and
+# a job the process no longer holds (after a restart, or pushed out of the store) is read from there.
+from config import job_store_maxsize
+from db import append_result, fetch_job, insert_job, update_status
+from services.sentiment_service import analyze_sentiment
+from vendor.leia.leia import Scores
+
+let job_language: Map[Text, Text] = {}
+let job_total: Map[Text, Int] = {}
+let job_status: Map[Text, Text] = {}
+let job_processed: Map[Text, Int] = {}
+let job_results: Map[Text, Map[Text, Scores]] = {}
+let job_order: Map[Int, Text] = {}
+let job_seq: Map[Text, Int] = {}
+
+fn forget_oldest():
+    while std.math.to_int(job_order.len()) > job_store_maxsize:
+        if job_order.keys().first() is Some(seq):
+            if job_order.remove(seq) is Some(id):
+                job_language.remove(id)
+                job_total.remove(id)
+                job_status.remove(id)
+                job_processed.remove(id)
+                job_results.remove(id)
+                job_seq.remove(id)
+
+fn remember(id: Text, language: Text, total: Int, processed: Int, status: Text, results: Map[Text, Scores]):
+    let seq = std.math.to_int(std.time.now() * 1000000.0)
+    job_language.insert(id, language)
+    job_total.insert(id, total)
+    job_status.insert(id, status)
+    job_processed.insert(id, processed)
+    job_results.insert(id, results)
+    job_seq.insert(id, seq)
+    job_order.insert(seq, id)
+    forget_oldest()
+
+# Brings a job that is only in PostgreSQL back into memory.
+fn load_job(id: Text) -> Bool:
+    match fetch_job(id):
+        case None:
+            False
+        case Some(row):
+            let parsed: Result[Map[Text, Scores], Text] = std.json.parse(row.results)
+            remember(row.id, row.language, row.total, row.processed, row.status, parsed.unwrap_or(std.map.new()))
+            True
+
+fn known(id: Text) -> Bool:
+    job_status.contains_key(id) or load_job(id)
+
+fn create(id: Text, language: Text, total: Int):
+    let empty: Map[Text, Scores] = std.map.new()
+    remember(id, language, total, 0, "pending", empty)
+    insert_job(id, language, total)
+    std.metrics.count("batch_jobs_total", {"status": "accepted"})
+
+fn set_status(id: Text, status: Text):
+    job_status.insert(id, status)
+    update_status(id, status)
+
+fn finish(id: Text, status: Text):
+    set_status(id, status)
+    std.metrics.count("batch_jobs_total", {"status": status})
+
+async fn process_job(id: Text, texts: List[Text], language: Text):
+    set_status(id, "processing")
+    for text in texts:
+        let scores = analyze_sentiment(text, language)
+        if job_results.get(id) is Some(results):
+            results.insert(text, scores)
+        let processed = job_processed.get(id).unwrap_or(0) + 1
+        job_processed.insert(id, processed)
+        append_result(id, text, scores, processed)
+    finish(id, "completed")

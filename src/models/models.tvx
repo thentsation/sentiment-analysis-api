@@ -1,0 +1,105 @@
+# Request and answer types, and the checks on what a request may hold.
+import std.http.Response
+
+from config import max_text_length, max_texts
+from vendor.leia.leia import Scores
+
+type TextRequest:
+    text: Text
+    language: Text = "en"
+
+type MultiTextRequest:
+    texts: List[Text]
+    language: Text = "en"
+
+type AnalyzeResponse:
+    text: Text
+    language: Text
+    sentiment: Scores
+
+type AnalyzeMultipleResponse:
+    results: Map[Text, Scores]
+
+type SentimentClassesResponse:
+    classes: Map[Text, Text]
+
+type SentimentStatistics:
+    positive: Int
+    neutral: Int
+    negative: Int
+
+type StatisticsResponse:
+    statistics: SentimentStatistics
+
+type RootResponse:
+    name: Text
+    version: Text
+    docs: Text
+    health: Text
+    metrics: Text
+    endpoints: List[Text]
+
+type HealthResponse:
+    status: Text
+
+type CacheInvalidationResponse:
+    status: Text
+    cleared: Int
+
+type BatchAcceptedResponse:
+    job_id: Text
+    status: Text
+    total: Int
+    results_url: Text
+
+type JobResultResponse:
+    job_id: Text
+    status: Text
+    total: Int
+    processed: Int
+    language: Text
+    results: Map[Text, Scores]?
+
+type StreamItem:
+    text: Text
+    sentiment: Scores
+
+type Detail:
+    detail: Text
+
+# A row of the `sentiment_jobs` table.
+type JobRow:
+    id: Text
+    language: Text
+    total: Int
+    processed: Int
+    status: Text
+    results: Text
+
+# The error answers have the body of the Python service: {"detail": "..."}.
+fn failure(code: Int, message: Text) -> Response:
+    Response.new(Detail(detail: message)).status(code)
+
+fn invalid_text(text: Text) -> Text?:
+    if text.chars().len() > max_text_length:
+        return Some(f"text is longer than {max_text_length} characters")
+    None
+
+fn invalid_language(language: Text) -> Text?:
+    if language != "en" and language != "pt":
+        return Some("language must be 'en' or 'pt'")
+    None
+
+# The first problem of a list of texts, as the answer to give: 400 for an empty list (like the
+# Python service) and 422 for one that does not fit the limits.
+fn check_texts(texts: List[Text], language: Text) -> Response?:
+    if texts.is_empty():
+        return Some(failure(400, "No texts provided"))
+    if texts.len() > max_texts:
+        return Some(failure(422, f"texts has more than {max_texts} items"))
+    for text in texts:
+        if invalid_text(text) is Some(message):
+            return Some(failure(422, message))
+    if invalid_language(language) is Some(message):
+        return Some(failure(422, message))
+    None

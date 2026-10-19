@@ -3,7 +3,7 @@
 # API de Análise de Sentimento
 
 Análise de sentimento em textos com VADER (inglês) e LeIA (português), escrita em [Telvax](https://github.com/telvax/telvax).
-O serviço é um programa de dois arquivos (`src/main.tvx` e `src/analyzer.tvx`) e roda como um único binário, com os
+O serviço é um programa com a mesma organização do serviço Python (`src/main.tvx`, `config`, `models`, `routes`, `services`, `vendor/leia`) e roda como um único binário, com os
 léxicos dentro dele. Começou como uma aplicação FastAPI; os scores das duas versões são os mesmos (veja [Testes](#testes)).
 
 ## Funcionalidades
@@ -97,7 +97,7 @@ A imagem compila o programa com `ghcr.io/telvax/telvax` e leva só o binário, n
 
 ### Testes
 
-`src/analyzer_test.tvx` tem 45 textos (inglês e português) com os scores que o serviço Python deu; foram gerados
+`src/leia_test.tvx` tem 45 textos (inglês e português) com os scores que o serviço Python deu; foram gerados
 rodando o NLTK VADER e o LeIA vendorizado da versão anterior sobre os textos. Outras 800 frases aleatórias (palavras dos
 léxicos, negações, maiúsculas, pontuação, acentos, emoji) deram os mesmos scores nas duas versões.
 
@@ -203,10 +203,23 @@ A documentação interativa está disponível em `/docs`; o documento OpenAPI es
 
 ```
 src/
-├── main.tvx               # Rotas, cache, jobs de lote, SSE, configurações
-├── analyzer.tvx           # VADER e LeIA
-├── analyzer_test.tvx      # Scores contra o serviço Python
-└── lexicons/              # Os léxicos, embutidos no binário
+├── main.tvx                       # App: rotas raiz e health
+├── config.tvx                     # Configurações vindas do ambiente
+├── db.tvx                         # Armazenamento dos jobs no PostgreSQL
+├── models/
+│   └── models.tvx                 # Tipos de requisição e resposta, limites de uma requisição
+├── repositories/
+│   └── sentiment_repository.tvx   # A análise de um texto
+├── routes/
+│   └── sentiment_routes.tvx       # As rotas /v1: análise, cache, jobs de lote, SSE
+├── services/
+│   ├── cache_service.tvx          # Cache de scores
+│   ├── job_store.tvx              # Jobs de lote, em memória e no PostgreSQL
+│   └── sentiment_service.tvx      # Sentimento pelo cache, classes
+├── vendor/leia/
+│   ├── leia.tvx                   # VADER e LeIA
+│   └── lexicons/                  # Os léxicos, embutidos no binário
+└── *_test.tvx                     # Testes: modelos, serviços e scores contra o serviço Python
 tests/
-└── api.sh                 # Chama todas as rotas de um servidor em execução
+└── api.sh                         # Chama todas as rotas de um servidor em execução
 ```

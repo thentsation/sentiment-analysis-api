@@ -22,7 +22,7 @@ format:
 lint:
 	$(TELVAX) fmt --check src
 	$(TELVAX) lint src/main.tvx
-	$(TELVAX) lint src/analyzer.tvx
+	$(TELVAX) lint src/vendor/leia/leia.tvx
 
 build:
 	$(TELVAX) build --serve src/main.tvx -o sentiment-analysis-api

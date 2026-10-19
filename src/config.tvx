@@ -1,0 +1,16 @@
+# Settings come from the environment, with the defaults of the Python service.
+fn setting(name: Text, default: Text) -> Text:
+    std.env.get(name).unwrap_or(default)
+
+fn int_setting(name: Text, default: Int) -> Int:
+    setting(name, "").to_int().unwrap_or(default)
+
+let max_text_length: u64 = 10000
+let max_texts: u64 = 100
+
+let version = setting("VERSION", "1.0.0")
+let admin_token = setting("ADMIN_TOKEN", "")
+let cache_maxsize = int_setting("CACHE_MAXSIZE", 10000)
+let cache_ttl_seconds = setting("CACHE_TTL_SECONDS", "").to_float().unwrap_or(300.0)
+let job_store_maxsize = int_setting("JOB_STORE_MAXSIZE", 100)
+let database_url = setting("DATABASE_URL", "")

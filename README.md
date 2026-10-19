@@ -3,7 +3,7 @@
 # Sentiment Analysis API
 
 Sentiment analysis on text with VADER (English) and LeIA (Portuguese), written in [Telvax](https://github.com/telvax/telvax).
-The service is one program of two files (`src/main.tvx` and `src/analyzer.tvx`) and runs as one binary with the lexicons
+The service is one program with the same layout as the Python service (`src/main.tvx`, `config`, `models`, `routes`, `services`, `vendor/leia`) and runs as one binary with the lexicons
 inside it. It started as a FastAPI application; the scores of the two versions are the same (see [Tests](#tests)).
 
 ## Features
@@ -97,7 +97,7 @@ is `/service --healthcheck /health`.
 
 ### Tests
 
-`src/analyzer_test.tvx` has 45 texts (English and Portuguese) with the scores that the Python service gave; they were made
+`src/leia_test.tvx` has 45 texts (English and Portuguese) with the scores that the Python service gave; they were made
 by running NLTK VADER and the vendored LeIA of the previous version over the texts. A further 800 random sentences
 (lexicon words, negations, capitals, punctuation, accents, emoji) gave the same scores in both versions.
 
@@ -203,10 +203,23 @@ Interactive documentation is available at `/docs`; the OpenAPI document is at `/
 
 ```
 src/
-├── main.tvx               # Routes, cache, batch jobs, SSE, settings
-├── analyzer.tvx           # VADER and LeIA
-├── analyzer_test.tvx      # Scores against the Python service
-└── lexicons/              # The lexicons, embedded in the binary
+├── main.tvx                       # App: root and health routes
+├── config.tvx                     # Settings from the environment
+├── db.tvx                         # PostgreSQL storage of the jobs
+├── models/
+│   └── models.tvx                 # Request and answer types, limits on a request
+├── repositories/
+│   └── sentiment_repository.tvx   # The analysis of one text
+├── routes/
+│   └── sentiment_routes.tvx       # The /v1 routes: analysis, cache, batch jobs, SSE
+├── services/
+│   ├── cache_service.tvx          # Cache of scores
+│   ├── job_store.tvx              # Batch jobs, in memory and in PostgreSQL
+│   └── sentiment_service.tvx      # Sentiment through the cache, classes
+├── vendor/leia/
+│   ├── leia.tvx                   # VADER and LeIA
+│   └── lexicons/                  # The lexicons, embedded in the binary
+└── *_test.tvx                     # Tests: models, services and scores against the Python service
 tests/
-└── api.sh                 # Calls every route of a running server
+└── api.sh                         # Calls every route of a running server
 ```

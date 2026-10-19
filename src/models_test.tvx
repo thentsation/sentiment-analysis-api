@@ -1,0 +1,27 @@
+# Tests of the limits on a request.
+from models.models import check_texts, invalid_text, invalid_language
+
+fn test_text_length_limit_is_10000_characters():
+    let ok = std.string.repeat("a", 10000)
+    let long = std.string.repeat("a", 10001)
+    assert(invalid_text(ok).is_none())
+    assert(invalid_text(long).is_some())
+    # Characters, not bytes
+    assert(invalid_text(std.string.repeat("é", 10000)).is_none())
+
+fn test_only_english_and_portuguese():
+    assert(invalid_language("en").is_none())
+    assert(invalid_language("pt").is_none())
+    assert(invalid_language("fr").is_some())
+    assert(invalid_language("").is_some())
+
+fn test_a_list_of_texts_has_to_fit():
+    assert(check_texts(["a"], "en").is_none())
+    assert(check_texts([], "en").is_some())
+    assert(check_texts(["a"], "fr").is_some())
+    let many: List[Text] = []
+    for i in range(101):
+        many.push(f"text {i}")
+    assert(check_texts(many, "en").is_some())
+    many.pop()
+    assert(check_texts(many, "en").is_none())

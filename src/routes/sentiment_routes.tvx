@@ -1,0 +1,97 @@
+# The routes under /v1: analysis, statistics, the cache, batch jobs and Server-Sent Events.
+import std.http.Request
+import std.http.Response
+import std.http.Sink
+import std.http.Status
+
+from config import admin_token
+from models.models import AnalyzeMultipleResponse, AnalyzeResponse, BatchAcceptedResponse, CacheInvalidationResponse, JobResultResponse, MultiTextRequest, SentimentClassesResponse, SentimentStatistics, StatisticsResponse, StreamItem, TextRequest, check_texts, failure, invalid_language, invalid_text
+from services.cache_service import cache_clear
+from services.job_store import create, finish, job_processed, job_results, job_status, job_total, job_language, known, process_job
+from services.sentiment_service import analyze_sentiment, classify, sentiment_classes as classes
+from vendor.leia.leia import Scores
+
+@endpoint(POST, "/v1/analyze")
+fn analyze_one(input: TextRequest) -> Result[Response, Status]:
+    if input.text.is_empty():
+        return Ok(failure(400, "No text provided"))
+    if invalid_text(input.text) is Some(message):
+        return Ok(failure(422, message))
+    if invalid_language(input.language) is Some(message):
+        return Ok(failure(422, message))
+    let scores = analyze_sentiment(input.text, input.language)
+    Ok(Response.new(AnalyzeResponse(text: input.text, language: input.language, sentiment: scores)))
+
+@endpoint(POST, "/v1/analyze_multiple")
+fn analyze_multiple(input: MultiTextRequest) -> Result[Response, Status]:
+    if check_texts(input.texts, input.language) is Some(rejected):
+        return Ok(rejected)
+    let results: Map[Text, Scores] = std.map.new()
+    for text in input.texts:
+        results.insert(text, analyze_sentiment(text, input.language))
+    Ok(Response.new(AnalyzeMultipleResponse(results: results)))
+
+@endpoint(GET, "/v1/sentiment_classes")
+fn sentiment_classes() -> Result[SentimentClassesResponse, Status]:
+    Ok(SentimentClassesResponse(classes: classes))
+
+@endpoint(POST, "/v1/analyze_statistics")
+fn analyze_statistics(input: MultiTextRequest) -> Result[Response, Status]:
+    if check_texts(input.texts, input.language) is Some(rejected):
+        return Ok(rejected)
+    var positive = 0
+    var neutral = 0
+    var negative = 0
+    for text in input.texts:
+        let kind = classify(analyze_sentiment(text, input.language).compound)
+        if kind == "positive":
+            positive += 1
+        elif kind == "negative":
+            negative += 1
+        else:
+            neutral += 1
+    Ok(Response.new(StatisticsResponse(statistics: SentimentStatistics(positive: positive, neutral: neutral, negative: negative))))
+
+@endpoint(DELETE, "/v1/cache")
+fn invalidate_cache(req: Request) -> Result[Response, Status]:
+    if admin_token != "" and req.header("x-admin-token") != Some(admin_token):
+        return Ok(failure(401, "Invalid admin token"))
+    Ok(Response.new(CacheInvalidationResponse(status: "cache invalidated", cleared: cache_clear())))
+
+@endpoint(POST, "/v1/analyze_batch")
+fn submit_batch(input: MultiTextRequest) -> Result[Response, Status]:
+    if check_texts(input.texts, input.language) is Some(rejected):
+        return Ok(rejected)
+    let id = std.random.uuid()
+    let total = std.math.to_int(input.texts.len())
+    create(id, input.language, total)
+    # If the task fails, the job is marked as failed instead of staying in `processing`.
+    fn failed(_message: Text):
+        finish(id, "failed")
+    std.task.spawn(process_job(id, input.texts, input.language), failed)
+    Ok(Response.new(BatchAcceptedResponse(job_id: id, status: "pending", total: total, results_url: "/v1/results/" + id)).status(202))
+
+@endpoint(GET, "/v1/results/{job_id}")
+fn get_results(job_id: Text) -> Result[Response, Status]:
+    if not known(job_id):
+        return Ok(failure(404, "Job not found"))
+    let results = job_results.get(job_id)
+    let shown: Map[Text, Scores]? = results.filter(r => not r.is_empty())
+    Ok(Response.new(JobResultResponse(
+        job_id: job_id,
+        status: job_status.get(job_id).unwrap_or("pending"),
+        total: job_total.get(job_id).unwrap_or(0),
+        processed: job_processed.get(job_id).unwrap_or(0),
+        language: job_language.get(job_id).unwrap_or("en"),
+        results: shown,
+    )))
+
+@endpoint(POST, "/v1/analyze_stream")
+fn analyze_stream(input: MultiTextRequest) -> Result[Response, Status]:
+    if check_texts(input.texts, input.language) is Some(rejected):
+        return Ok(rejected)
+    fn produce(sink: Sink):
+        for text in input.texts:
+            sink.send(StreamItem(text: text, sentiment: analyze_sentiment(text, input.language)))
+        sink.event("done", "{}")
+    Ok(Response.events(produce).header("cache-control", "no-cache"))

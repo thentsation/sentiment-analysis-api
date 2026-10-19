@@ -1,0 +1,9 @@
+# Tests of the classes of a score.
+from services.sentiment_service import classify
+
+fn test_classes_follow_the_thresholds():
+    assert_eq(classify(0.06), "positive")
+    assert_eq(classify(0.05), "neutral")
+    assert_eq(classify(0.0), "neutral")
+    assert_eq(classify(-0.05), "neutral")
+    assert_eq(classify(-0.06), "negative")

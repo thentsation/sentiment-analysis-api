@@ -31,7 +31,7 @@ jobs:
           telvax check src/main.tvx
           telvax fmt --check src
           telvax lint src/main.tvx
-          telvax lint src/analyzer.tvx
+          telvax lint src/vendor/leia/leia.tvx
 
       - name: Tests (scores against the Python service)
         run: docker run --rm -v "$PWD:/work" -w /work "$TELVAX_IMAGE" test src

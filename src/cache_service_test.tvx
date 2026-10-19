@@ -1,0 +1,19 @@
+# Tests of the cache of scores.
+from services.cache_service import cache, cache_key
+from services.sentiment_service import analyze_sentiment
+
+fn test_the_cache_keeps_a_score_and_clear_says_how_many():
+    cache.clear()
+    let first = analyze_sentiment("I love this!", "en")
+    assert_eq(cache.len(), 1)
+    let second = analyze_sentiment("I love this!", "en")
+    assert_eq(first.compound, second.compound)
+    assert_eq(cache.len(), 1)
+    # The same text in another language is another entry.
+    analyze_sentiment("I love this!", "pt")
+    assert_eq(cache.len(), 2)
+    assert_eq(cache.clear(), 2)
+    assert_eq(cache.len(), 0)
+
+fn test_the_cache_key_has_the_language():
+    assert(cache_key("x", "en") != cache_key("x", "pt"))

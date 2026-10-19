@@ -1,0 +1,51 @@
+# PostgreSQL storage of the batch jobs. With DATABASE_URL empty nothing is written.
+import std.db.postgres.PostgresClient
+
+from config import database_url
+from models.models import JobRow
+from vendor.leia.leia import Scores
+
+let db = PostgresClient.connect(database_url)
+
+fn persistent() -> Bool:
+    not database_url.is_empty()
+
+fn persist[P](sql: Text, params: P):
+    if persistent():
+        match db.execute(sql, params):
+            case Ok(_):
+                pass
+            case Err(message):
+                print(f"postgres: {message}")
+
+# The table is made by the first request that needs it: a program has no code that runs at start.
+let db_ready: Map[Text, Bool] = {}
+
+fn init_db():
+    if db_ready.contains_key("table"):
+        return
+    db_ready.insert("table", True)
+    persist("CREATE TABLE IF NOT EXISTS sentiment_jobs (id TEXT PRIMARY KEY, language TEXT NOT NULL, total INTEGER NOT NULL, processed INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'pending', results JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT now())", [])
+
+fn insert_job(id: Text, language: Text, total: Int):
+    init_db()
+    persist("INSERT INTO sentiment_jobs (id, language, total) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING", (id, language, total))
+
+fn update_status(id: Text, status: Text):
+    persist("UPDATE sentiment_jobs SET status = $1 WHERE id = $2", (status, id))
+
+fn append_result(id: Text, text: Text, scores: Scores, processed: Int):
+    persist("UPDATE sentiment_jobs SET results = results || $1::jsonb, processed = $2 WHERE id = $3", (std.json.stringify(std.map.from_entries([(text, scores)])), processed, id))
+
+fn fetch_job(id: Text) -> JobRow?:
+    if not persistent():
+        return None
+    init_db()
+    let sql = "SELECT id, language, total, processed, status, results::text AS results FROM sentiment_jobs WHERE id = $1"
+    let found: Result[List[JobRow], Text] = db.query(sql, [id])
+    match found:
+        case Err(message):
+            print(f"postgres: {message}")
+            None
+        case Ok(rows):
+            rows.first()

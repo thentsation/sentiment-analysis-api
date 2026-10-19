@@ -1,0 +1,23 @@
+# The cache of scores: a size limit, an expiry and a counter of hits and misses.
+from config import cache_maxsize, cache_ttl_seconds
+from vendor.leia.leia import Scores
+
+let cache = std.cache.new(cache_maxsize, cache_ttl_seconds)
+
+fn cache_key(text: Text, language: Text) -> Text:
+    language + ":" + text
+
+fn cache_get(text: Text, language: Text) -> Scores?:
+    match cache.get(cache_key(text, language)):
+        case Some(hit):
+            std.metrics.count("cache_hits_total")
+            Some(hit)
+        case None:
+            std.metrics.count("cache_misses_total")
+            None
+
+fn cache_set(text: Text, language: Text, scores: Scores):
+    cache.set(cache_key(text, language), scores)
+
+fn cache_clear() -> Int:
+    cache.clear()

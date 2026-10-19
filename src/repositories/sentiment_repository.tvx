@@ -1,0 +1,5 @@
+# The analysis of one text, in the language asked for.
+from vendor.leia.leia import analyze, Scores
+
+fn analyze_sentiment(text: Text, language: Text) -> Scores:
+    analyze(text, language)

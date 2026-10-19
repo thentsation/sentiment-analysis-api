@@ -1,0 +1,16 @@
+# Tests of the job store.
+from services.job_store import remember, job_status, job_order, known
+from vendor.leia.leia import Scores
+
+fn test_the_job_store_forgets_the_oldest_job():
+    let none: Map[Text, Scores] = std.map.new()
+    # job_store_maxsize is 100 by default
+    for i in range(105):
+        remember(f"job{i}", "en", 1, 0, "pending", none)
+    assert(not job_status.contains_key("job0"))
+    assert(not job_status.contains_key("job4"))
+    assert(job_status.contains_key("job5"))
+    assert(job_status.contains_key("job104"))
+    assert_eq(job_order.len(), 100)
+    assert(known("job104"))
+    assert(not known("never-made"))

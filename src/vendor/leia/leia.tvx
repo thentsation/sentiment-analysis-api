@@ -54,16 +54,16 @@ fn load_boosters(content: Text) -> Map[Text, Float]:
     boosters
 
 let english = Lang(
-    lexicon: load_lexicon(std.fs.embed("lexicons/en_lexicon.txt")),
-    negate: load_lines(std.fs.embed("lexicons/en_negate.txt")),
-    boosters: load_boosters(std.fs.embed("lexicons/en_booster.txt")),
+    lexicon: load_lexicon(std.fs.embed("vendor/leia/lexicons/en_lexicon.txt")),
+    negate: load_lines(std.fs.embed("vendor/leia/lexicons/en_negate.txt")),
+    boosters: load_boosters(std.fs.embed("vendor/leia/lexicons/en_booster.txt")),
     portuguese: False,
 )
 
 let portuguese = Lang(
-    lexicon: load_lexicon(std.fs.embed("lexicons/pt_lexicon.txt")),
-    negate: load_lines(std.fs.embed("lexicons/pt_negate.txt")),
-    boosters: load_boosters(std.fs.embed("lexicons/pt_booster.txt")),
+    lexicon: load_lexicon(std.fs.embed("vendor/leia/lexicons/pt_lexicon.txt")),
+    negate: load_lines(std.fs.embed("vendor/leia/lexicons/pt_negate.txt")),
+    boosters: load_boosters(std.fs.embed("vendor/leia/lexicons/pt_booster.txt")),
     portuguese: True,
 )
 
@@ -88,7 +88,7 @@ fn index_of(words: List[Text], word: Text) -> Int:
     for k in range(size(words)):
         if words[k] == word:
             return k
-    - 1
+    -1
 
 fn lower_all(words: List[Text]) -> List[Text]:
     words.map(w => w.to_lowercase())
@@ -236,7 +236,7 @@ fn first_index_of_float(xs: List[Float], x: Float) -> Int:
     for k in range(std.math.to_int(xs.len())):
         if xs[k] == x:
             return k
-    - 1
+    -1
 
 # VADER weighs words before "but" by 0.5 and after it by 1.5. LeIA copies that code with a `return`
 # inside the loop, so only "mas" counts, and each value is found by `list.index`, the first equal one.

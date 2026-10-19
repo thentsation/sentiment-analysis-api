@@ -1,4 +1,4 @@
-from analyzer import analyze, Scores
+from vendor.leia.leia import analyze, Scores
 
 fn close(a: Float, b: Float) -> Bool:
     std.math.abs(a - b) < 0.00001
