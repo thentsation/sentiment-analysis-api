@@ -1,0 +1,33 @@
+name: Compare image
+
+on:
+  push:
+    branches: [feat/compare-image]
+    paths: ['compare/**', 'src/**', '.github/workflows/compare.yaml']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Build the image
+        run: docker build -f compare/Dockerfile -t sentiment-compare .
+
+      - name: Run the comparison
+        run: docker run --rm sentiment-compare | tee compare.txt
+
+      - name: Show the table in the summary
+        run: |
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat compare.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
