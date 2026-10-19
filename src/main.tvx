@@ -6,6 +6,16 @@
 
 import std.http.Status
 
+# How the service is served; the flags and the TELVAX_* variables of `telvax serve` still win.
+serve:
+    metrics: True
+    log_format: "json"
+    cors: "*"
+    rate_limit: "100/min"
+    security_headers: True
+    process_time_header: True
+    error_format: "detail"
+
 from config import version
 from models.models import HealthResponse, RootResponse
 from routes.sentiment_routes import analyze_one, analyze_multiple, sentiment_classes, analyze_statistics, invalidate_cache, submit_batch, get_results, analyze_stream

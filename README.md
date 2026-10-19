@@ -31,7 +31,8 @@ make api-test     # calls every route of a running server
 make build        # one binary: ./sentiment-analysis-api
 ```
 
-`make run` is `telvax serve src/main.tvx --port 8000 --metrics --log-format json --cors '*' --rate-limit 100/min --security-headers`.
+`make run` is `telvax serve src/main.tvx --port 8000`. The options of the server (metrics, JSON logs, CORS, rate limit,
+security headers, `detail` errors) are in the `serve:` block at the top of `src/main.tvx`.
 
 ### Make targets
 
@@ -53,17 +54,18 @@ make build        # one binary: ./sentiment-analysis-api
 
 ### Configuration
 
-The service reads environment variables. The first four are read by every binary made with `telvax build --serve`:
+The service reads environment variables. `HOST`, `PORT` and the `TELVAX_*` variables are read by every binary made with `telvax build --serve`. The `TELVAX_*`
+ones override the `serve:` block of `src/main.tvx`; the defaults below are what the block sets:
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `HOST` | `0.0.0.0` | Bind host |
 | `PORT` | `8080` (`8000` in the image) | Bind port; `--port` wins |
-| `TELVAX_LOG_FORMAT` | _(none)_ | `json` or `text`: one log line per request, with a request id |
-| `TELVAX_RATE_LIMIT` | _(none)_ | Requests per client address, as `100/min` |
-| `TELVAX_CORS` | _(none)_ | Allowed origins, `*` or a comma-separated list |
-| `TELVAX_METRICS` | _(none)_ | `1` serves `/metrics` |
-| `TELVAX_SECURITY_HEADERS` | _(none)_ | `1` adds the security headers |
+| `TELVAX_LOG_FORMAT` | `json` | `json` or `text`: one log line per request, with a request id |
+| `TELVAX_RATE_LIMIT` | `100/min` | Requests per client address, as `100/min` |
+| `TELVAX_CORS` | `*` | Allowed origins, `*` or a comma-separated list |
+| `TELVAX_METRICS` | `1` | `1` serves `/metrics` |
+| `TELVAX_SECURITY_HEADERS` | `1` | `1` adds the security headers |
 | `ADMIN_TOKEN` | _(empty)_ | When set, `DELETE /v1/cache` requires `X-Admin-Token` |
 | `CACHE_MAXSIZE` | `10000` | Maximum cached sentiment entries |
 | `CACHE_TTL_SECONDS` | `300` | Cache entry TTL |

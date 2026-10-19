@@ -31,7 +31,8 @@ make api-test     # chama todas as rotas de um servidor em execução
 make build        # um binário: ./sentiment-analysis-api
 ```
 
-`make run` é `telvax serve src/main.tvx --port 8000 --metrics --log-format json --cors '*' --rate-limit 100/min --security-headers`.
+`make run` é `telvax serve src/main.tvx --port 8000`. As opções do servidor (métricas, logs JSON, CORS, rate limit,
+headers de segurança, erros `detail`) estão no bloco `serve:` no topo de `src/main.tvx`.
 
 ### Targets do Make
 
@@ -53,17 +54,18 @@ make build        # um binário: ./sentiment-analysis-api
 
 ### Configuração
 
-O serviço lê variáveis de ambiente. As primeiras são lidas por todo binário feito com `telvax build --serve`:
+O serviço lê variáveis de ambiente. `HOST`, `PORT` e as variáveis `TELVAX_*` são lidas por todo binário feito com `telvax build --serve`. As `TELVAX_*`
+sobrescrevem o bloco `serve:` de `src/main.tvx`; os padrões abaixo são o que o bloco define:
 
 | Variável | Padrão | Descrição |
 | --- | --- | --- |
 | `HOST` | `0.0.0.0` | Host de bind |
 | `PORT` | `8080` (`8000` na imagem) | Porta de bind; `--port` tem prioridade |
-| `TELVAX_LOG_FORMAT` | _(nenhum)_ | `json` ou `text`: uma linha de log por requisição, com request id |
-| `TELVAX_RATE_LIMIT` | _(nenhum)_ | Requisições por endereço de cliente, como `100/min` |
-| `TELVAX_CORS` | _(nenhum)_ | Origens permitidas, `*` ou lista separada por vírgulas |
-| `TELVAX_METRICS` | _(nenhum)_ | `1` serve `/metrics` |
-| `TELVAX_SECURITY_HEADERS` | _(nenhum)_ | `1` adiciona os headers de segurança |
+| `TELVAX_LOG_FORMAT` | `json` | `json` ou `text`: uma linha de log por requisição, com request id |
+| `TELVAX_RATE_LIMIT` | `100/min` | Requisições por endereço de cliente, como `100/min` |
+| `TELVAX_CORS` | `*` | Origens permitidas, `*` ou lista separada por vírgulas |
+| `TELVAX_METRICS` | `1` | `1` serve `/metrics` |
+| `TELVAX_SECURITY_HEADERS` | `1` | `1` adiciona os headers de segurança |
 | `ADMIN_TOKEN` | _(vazio)_ | Quando definido, `DELETE /v1/cache` exige `X-Admin-Token` |
 | `CACHE_MAXSIZE` | `10000` | Máximo de entradas de sentimento em cache |
 | `CACHE_TTL_SECONDS` | `300` | TTL das entradas do cache |

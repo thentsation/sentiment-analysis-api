@@ -13,14 +13,8 @@ FROM gcr.io/distroless/cc-debian12:nonroot
 
 COPY --from=builder /out/service /service
 
-ENV PORT=8000 \
-    TELVAX_METRICS=1 \
-    TELVAX_LOG_FORMAT=json \
-    TELVAX_CORS=* \
-    TELVAX_RATE_LIMIT=100/min \
-    TELVAX_SECURITY_HEADERS=1 \
-    TELVAX_ERROR_FORMAT=detail \
-    TELVAX_PROCESS_TIME_HEADER=1
+# The options of the server are in the `serve:` block of src/main.tvx.
+ENV PORT=8000
 
 EXPOSE 8000
 

@@ -12,6 +12,3 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=8000
-      - TELVAX_LOG_FORMAT=json
-      - TELVAX_RATE_LIMIT=100/min
-      - TELVAX_CORS=*
