@@ -65,7 +65,7 @@ check "stream ends with done" 1 "$(printf '%s\n' "$STREAM" | grep -c '^event: do
 check "root name" "Sentiment Analysis API" "$(curl -sS "$BASE/" | jq -r .name)"
 check "health" ok "$(curl -sS "$BASE/health" | jq -r .status)"
 check "openapi" 3.0.3 "$(curl -sS "$BASE/openapi.json" | jq -r .openapi)"
-check "metrics" yes "$(curl -sS "$BASE/metrics" | grep -q '^telvax_http_requests_total' && echo yes || echo no)"
+check "metrics" yes "$(curl -sS "$BASE/metrics" | grep -q '^http_requests_total' && echo yes || echo no)"
 check "process time header" 1 "$(curl -sSI "$BASE/health" | grep -ci '^x-process-time-ms:')"
 check "labelled counter" yes "$(curl -sS "$BASE/metrics" | grep -q '^sentiment_analysis_total{language="en",sentiment="positive"}' && echo yes || echo no)"
 R=$(post /v1/analyze '{"text":"x","top":1}')
