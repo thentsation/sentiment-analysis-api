@@ -18,7 +18,7 @@ colorama==0.4.6 ; sys_platform == 'win32'
     # via tqdm
 defusedxml==0.7.1
     # via nltk
-fastapi==0.142.2
+fastapi==0.161.1
     # via
     #   -r config/requirements.txt
     #   sentry-sdk
@@ -30,7 +30,7 @@ joblib==1.6.0
     # via nltk
 msgpack==1.2.3
     # via -r config/requirements.txt
-nltk==3.10.3
+nltk==3.10.4
     # via -r config/requirements.txt
 opentelemetry-api==1.45.0
     # via fastapi
@@ -46,13 +46,13 @@ pydantic==2.13.5
     #   pydantic-settings
 pydantic-core==2.46.5
     # via pydantic
-pydantic-settings==2.15.0
+pydantic-settings==2.16.1
     # via -r config/requirements.txt
 python-dotenv==1.2.4
     # via pydantic-settings
 regex==2026.9.29
     # via nltk
-sentry-sdk==2.71.0
+sentry-sdk==2.72.0
     # via -r config/requirements.txt
 starlette==1.7.0
     # via fastapi
@@ -68,6 +68,7 @@ typing-extensions==4.16.0
     #   psycopg
     #   pydantic
     #   pydantic-core
+    #   pydantic-settings
     #   starlette
     #   typing-inspection
 typing-inspection==0.4.4
