@@ -140,8 +140,8 @@ A documentação interativa está disponível em `/docs`; o documento OpenAPI es
 - **GET /** — Metadados da API (nome, versão, docs, lista de endpoints).
 - **GET /health** — Health check.
 - **GET /metrics** — Métricas no formato Prometheus: requisições e latência por rota, e os
-  contadores do serviço como `telvax_counter_total{name="..."}` (`cache_hits`, `cache_misses`,
-  `sentiment_analysis_<idioma>_<classe>`, `batch_jobs_<status>`).
+  contadores do serviço: `cache_hits_total`, `cache_misses_total`,
+  `sentiment_analysis_total{language,sentiment}` e `batch_jobs_total{status}`.
 
 ### Sentimento (`/v1`)
 

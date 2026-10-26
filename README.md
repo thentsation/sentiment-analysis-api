@@ -140,8 +140,8 @@ Interactive documentation is available at `/docs`; the OpenAPI document is at `/
 - **GET /** — API metadata (name, version, docs, endpoints list).
 - **GET /health** — Health check.
 - **GET /metrics** — Prometheus metrics: requests and latency per route, and the counters of the
-  service as `telvax_counter_total{name="..."}` (`cache_hits`, `cache_misses`,
-  `sentiment_analysis_<language>_<class>`, `batch_jobs_<status>`).
+  service: `cache_hits_total`, `cache_misses_total`, `sentiment_analysis_total{language,sentiment}`
+  and `batch_jobs_total{status}`.
 
 ### Sentiment (`/v1`)
 
