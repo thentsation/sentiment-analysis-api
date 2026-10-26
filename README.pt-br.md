@@ -116,6 +116,20 @@ make run
 make load-test
 ```
 
+### Comparar com a versão Python
+
+Uma imagem roda o serviço Python (FastAPI) e este, cada um sozinho sob a mesma carga do `ab`, e imprime uma tabela
+(requisições por segundo, p50 e p99, memória, tempo de partida). Precisa só do Docker:
+
+```bash
+docker build -f compare/Dockerfile -t sentiment-compare \
+  https://github.com/thentsation/sentiment-analysis-api.git#feat/compare-image \
+  && docker run --rm sentiment-compare
+```
+
+Ela constrói os dois serviços, então a primeira execução leva alguns minutos; a execução em si leva um tempo parecido. A
+versão Python fica presa a um commit da `main` e a imagem do Telvax a uma release (`PYTHON_COMMIT` e `TELVAX_IMAGE` em `compare/Dockerfile`).
+
 ### Benchmark
 
 Benchmark de cache hit vs cache miss (resultados e metodologia em [`docs/benchmarks/`](docs/benchmarks/)):
