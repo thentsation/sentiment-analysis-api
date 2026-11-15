@@ -14,7 +14,7 @@ RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /install /usr/local
 
-RUN pip install --no-cache-dir --upgrade setuptools
+RUN pip install --no-cache-dir --upgrade pip setuptools
 
 ENV NLTK_DATA=/usr/local/share/nltk_data
 
