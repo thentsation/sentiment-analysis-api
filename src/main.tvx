@@ -1,17 +1,21 @@
 # Sentiment Analysis API: VADER for English, LeIA for Portuguese, with a cache, asynchronous
 # batch jobs, Server-Sent Events and the same routes as the Python service.
 #
-# Run: telvax serve main.tvx --port 8000 --metrics --log-format json --cors "*" \
-#          --rate-limit 100/min --security-headers
+# Run: telvax serve main.tvx --port 8000
 
 import std.http.Status
 
-# How the service is served; the flags and the TELVAX_* variables of `telvax serve` still win.
+from db import init_db
+
+# How the service is served. The variables are the ones of the Python service where the value has the same form
+# (the log format is `json` or `text`); the flags and the TELVAX_* variables of `telvax serve` still win.
 serve:
+    on_start: [init_db]
     metrics: True
-    log_format: "json"
-    cors: "*"
-    rate_limit: "100/min"
+    log_format: env("LOG_FORMAT", "json")
+    log_level: env("LOG_LEVEL", "info")
+    cors: env("CORS_ORIGINS", "*")
+    rate_limit: env("RATE_LIMIT", "100/min")
     security_headers: True
     process_time_header: True
     error_format: "detail"

@@ -71,4 +71,5 @@ async fn process_job(id: Text, texts: List[Text], language: Text):
         let processed = job_processed.get(id).unwrap_or(0) + 1
         job_processed.insert(id, processed)
         append_result(id, text, scores, processed)
+    std.log.debug("batch job completed", {"job_id": id, "texts": f"{texts.len()}"})
     finish(id, "completed")
